@@ -1,0 +1,39 @@
+name: Web Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [master, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '6.0.13'
+      - name: Configure
+        run: emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build-web --parallel 2
+      - name: Upload static site
+        uses: actions/upload-artifact@v4
+        with:
+          name: Bugdom-web
+          if-no-files-found: error
+          path: |
+            build-web/Bugdom.html
+            build-web/Bugdom.js
+            build-web/Bugdom.wasm
+            build-web/Bugdom.data
+            build-web/Bugdom.png
+            build-web/web-assets/

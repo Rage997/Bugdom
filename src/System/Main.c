@@ -18,9 +18,9 @@
 
 static void InitArea(void);
 static void CleanupLevel(void);
-static void PlayArea(void);
-static void DoDeathReset(void);
-static void PlayGame(void);
+static bool PlayArea(void);
+static bool DoDeathReset(void);
+static bool PlayGame(void);
 static void CheckForCheats(void);
 
 
@@ -251,188 +251,182 @@ void InitPrefs(void)
 
 /******************** PLAY GAME ************************/
 
-static void PlayGame(void)
+static bool PlayGame(void)
 {
+	enum { kStart, kSelect, kIntro, kLoad, kPlay, kFade, kBonus, kEnding, kScores };
+	static int phase;
 
-			/***********************/
-			/* GAME INITIALIZATION */
-			/***********************/
-			
-	InitInventoryForGame();
-	gGameOverFlag = false;
-
-
-			/* CHEAT: LET USER SELECT STARTING LEVEL & AREA */
-
-	UpdateInput();
-	
-	if (GetKeyState_SDL(SDL_SCANCODE_F10))				// see if do level cheat
+	switch (phase)
 	{
-		if (!DoLevelSelect())
-			return;
+		case kStart:
+			InitInventoryForGame();
+			gGameOverFlag = false;
+			gWonGameFlag = false;
+			UpdateInput();
+			if (GetKeyState_SDL(SDL_SCANCODE_F10))
+				phase = kSelect;
+			else
+			{
+				if (!gRestoringSavedGame)
+					gRealLevel = 0;
+				phase = kIntro;
+			}
+			break;
+
+		case kSelect:
+		{
+			int result = DoLevelSelect();
+			if (result < 0)
+				break;
+			if (!result)
+			{
+				phase = kStart;
+				return true;
+			}
+			phase = kIntro;
+			break;
+		}
+
+		case kIntro:
+			gLevelType = gLevelTable[gRealLevel].levelType;
+			gAreaNum = gLevelTable[gRealLevel].areaNum;
+			if (ShowLevelIntroScreen())
+				phase = kLoad;
+			break;
+
+		case kLoad:
+			InitArea();
+			gRestoringSavedGame = false;
+			QD3D_ResetFrameTimer();
+			phase = kPlay;
+			break;
+
+		case kPlay:
+			if (PlayArea())
+				phase = kFade;
+			break;
+
+		case kFade:
+			if (!GammaFadeOut(true))
+				break;
+			CleanupLevel();
+			GameScreenToBlack();
+			phase = gGameOverFlag ? kEnding : kBonus;
+			break;
+
+		case kBonus:
+			if (!DoBonusScreen())
+				break;
+			gRealLevel++;
+			phase = gRealLevel < NUM_LEVELS ? kIntro : kEnding;
+			break;
+
+		case kEnding:
+			if (gWonGameFlag ? DoWinScreen() : DoLoseScreen())
+				phase = kScores;
+			break;
+
+		case kScores:
+			if (!ShowHighScoresScreen(gScore))
+				break;
+			phase = kStart;
+			return true;
 	}
-	else
-	if (!gRestoringSavedGame)							// otherwise start @ 0 if not restoring
-		gRealLevel = 0;
-
-			/**********************/
-			/* GO THRU EACH LEVEL */
-			/**********************/
-			//
-			// Note: gRealLevel is already set if restoring a saved game
-			//
-					
-	for (; gRealLevel < NUM_LEVELS; gRealLevel++)
-	{
-			/* GET LEVEL TYPE & AREA FOR THIS LEVEL */
-
-		gLevelType = gLevelTable[gRealLevel].levelType;
-		gAreaNum = gLevelTable[gRealLevel].areaNum;
-		
-
-			/* PLAY THIS AREA */
-		
-		ShowLevelIntroScreen();
-		InitArea();
-
-		gRestoringSavedGame = false;				// we dont need this anymore
-		
-		PlayArea();
-
-
-			/* CLEANUP LEVEL */
-
-		GammaFadeOut(true);
-		CleanupLevel();
-		GameScreenToBlack();		
-		
-		if (gGameOverFlag)
-			goto game_over;
-			
-		/* DO END-LEVEL BONUS SCREEN */
-			
-		DoBonusScreen();
-	}
-	
-			/*************/
-			/* GAME OVER */
-			/*************/
-game_over:
-			/* PLAY WIN MOVIE */
-	
-	if (gWonGameFlag)
-		DoWinScreen();
-	
-			/* PLAY LOSE MOVIE */
-	else
-		DoLoseScreen();
-
-	ShowHighScoresScreen(gScore);
+	return false;
 }
 
 
 
 /**************** PLAY AREA ************************/
 
-static void PlayArea(void)
+static bool PlayArea(void)
 {
-float killDelay = KILL_DELAY;						// time to wait after I'm dead before fading out
-float fps;
+	enum { kStart, kPlaying, kPaused, kDeath };
+	static int phase;
+	static float killDelay;
 
-	gIsInGame = true;
-	CaptureMouse(true);
-	
-	UpdateInput();
-	QD3D_CalcFramesPerSecond();						// prime this
-	QD3D_CalcFramesPerSecond();
-
-		/* PRIME 1ST FRAME & MADE FADE EVENT */
-
-	gGammaFadeFactor = 0.0f;
-	QD3D_DrawScene(gGameViewInfoPtr,DrawTerrain);
-	MakeFadeEvent(true);
-
-	ResetInputState();
-
-		/******************/
-		/* MAIN GAME LOOP */
-		/******************/
-
-	while(true)
+	if (phase == kStart)
 	{
-		fps = gFramesPerSecondFrac;
+		killDelay = KILL_DELAY;
+		gIsInGame = true;
+		CaptureMouse(true);
 		UpdateInput();
-
-				/* SPECIFIC MAINTENANCE */
-
-		CheckPlayerMorph();				
-		UpdateLiquidAnimation();
-		UpdateHoneyTubeTextureAnimation();
-		UpdateRootSwings();
-		
-	
-				/* MOVE OBJECTS */
-				
-		MoveObjects();
-		MoveSplineObjects();
-		QD3D_MoveShards();
-		MoveParticleGroups();
-		UpdateCamera();
-	
-			/* DRAW OBJECTS & TERRAIN */
-					
-		UpdateInfobar();
-
-		DoMyTerrainUpdate();
-		QD3D_DrawScene(gGameViewInfoPtr,DrawTerrain);
-
-		QD3D_CalcFramesPerSecond();
-		DoSDLMaintenance();
-		gDisableHiccupTimer = false;
-
-			/* SEE IF PAUSE GAME */
-
-		if (GetNewKeyState(kKey_Pause) || IsCmdQPressed())		// see if pause/abort
-		{
-			CaptureMouse(false);
-			DoPaused();
-			CaptureMouse(true);
-		}
-
-			/* SEE IF GAME ENDED */				
-		
-		if (gGameOverFlag)
-			break;
-
-		if (gAreaCompleted)
-		{
-			if (gRealLevel == LEVEL_NUM_ANTKING)		// if completed Ant King, then I won!
-				gWonGameFlag = true;
-			break;
-		}
-
-			/* CHECK FOR CHEATS */
-			
-		CheckForCheats();
-					
-			
-			/* SEE IF GOT KILLED */
-				
-		if (gPlayerGotKilledFlag)				// if got killed, then hang around for a few seconds before resetting player
-		{
-			killDelay -= fps;					
-			if (killDelay < 0.0f)				// see if time to reset player
-			{
-				killDelay = KILL_DELAY;			// reset kill timer for next death
-				DoDeathReset();
-				if (gGameOverFlag)				// see if that's all folks
-					break;
-			}
-			ResetInputState();
-		}	
+		gGammaFadeFactor = 0;
+		QD3D_DrawScene(gGameViewInfoPtr, DrawTerrain);
+		MakeFadeEvent(true);
+		ResetInputState();
+		phase = kPlaying;
+		return false;
 	}
-	
+
+	if (phase == kPaused)
+	{
+		if (!DoPaused())
+			return false;
+		QD3D_ResetFrameTimer();
+		phase = kPlaying;
+		if (gGameOverFlag)
+			goto complete;
+		CaptureMouse(true);
+		return false;
+	}
+
+	if (phase == kDeath)
+	{
+		if (!DoDeathReset())
+			return false;
+		phase = kPlaying;
+		killDelay = KILL_DELAY;
+		if (gGameOverFlag)
+			goto complete;
+		QD3D_ResetFrameTimer();
+		return false;
+	}
+
+	UpdateInput();
+	CheckPlayerMorph();
+	UpdateLiquidAnimation();
+	UpdateHoneyTubeTextureAnimation();
+	UpdateRootSwings();
+	MoveObjects();
+	MoveSplineObjects();
+	QD3D_MoveShards();
+	MoveParticleGroups();
+	UpdateCamera();
+	UpdateInfobar();
+	DoMyTerrainUpdate();
+	QD3D_DrawScene(gGameViewInfoPtr, DrawTerrain);
+	DoSDLMaintenance();
+	gDisableHiccupTimer = false;
+
+	if (GetNewKeyState(kKey_Pause) || IsCmdQPressed())
+	{
+		CaptureMouse(false);
+		phase = kPaused;
+		return false;
+	}
+	if (gGameOverFlag)
+		goto complete;
+	if (gAreaCompleted)
+	{
+		if (gRealLevel == LEVEL_NUM_ANTKING)
+			gWonGameFlag = true;
+		goto complete;
+	}
+	CheckForCheats();
+	if (gPlayerGotKilledFlag)
+	{
+		killDelay -= gFramesPerSecondFrac;
+		if (killDelay < 0)
+			phase = kDeath;
+		ResetInputState();
+	}
+	return false;
+
+complete:
 	CaptureMouse(false);
+	phase = kStart;
+	return true;
 }
 
 
@@ -661,36 +655,29 @@ static void CleanupLevel(void)
 // Called from above when player is killed.
 //
 
-static void DoDeathReset(void)
+static bool DoDeathReset(void)
 {
-
-			/* SEE IF THAT WAS THE LAST LIFE */
-			
-	gNumLives--;
-	gInfobarUpdateBits |= UPDATE_LIVES;
-	if (gNumLives <= 0)
+	static bool fading;
+	if (!fading)
 	{
-		gGameOverFlag = true;
-		return;		// don't fade out -- PlayGame() does a final fade out as it cleans up after PlayArea returns
+		gNumLives--;
+		gInfobarUpdateBits |= UPDATE_LIVES;
+		if (gNumLives <= 0)
+		{
+			gGameOverFlag = true;
+			return true;
+		}
+		fading = true;
 	}
-
-			/* FADE OUT IF WE HAVE MORE LIVES */
-
-	GammaFadeOut(false);
-	
-
-			/* RESET THE PLAYER & CAMERA INFO */
-				
+	if (!GammaFadeOut(false))
+		return false;
 	ResetPlayer();
 	InitCamera();
-	
-	
-		/* RESET TERRAIN SCROLL AT LAST CHECKPOINT */
-		
 	InitCurrentScrollSettings();
 	PrimeInitialTerrain(true);
-	
 	MakeFadeEvent(true);
+	fading = false;
+	return true;
 }
 
 
@@ -741,51 +728,64 @@ static void CheckForCheats(void)
 
 /********************* DEBUG SHORTCUT KEYS ON BOOT ***********************/
 
-static void CheckDebugShortcutKeysOnBoot(void)
+static bool CheckDebugShortcutKeysOnBoot(void)
 {
+	enum { kChoose, kModel, kSave, kLoad, kLose, kWin, kSettings, kGame };
+	static int phase;
 	static const int levelKeys[10] =
 	{
 		SDL_SCANCODE_1, SDL_SCANCODE_2, SDL_SCANCODE_3, SDL_SCANCODE_4, SDL_SCANCODE_5,
 		SDL_SCANCODE_6, SDL_SCANCODE_7, SDL_SCANCODE_8, SDL_SCANCODE_9, SDL_SCANCODE_0,
 	};
 
-	if (GetKeyState_SDL(SDL_SCANCODE_F1))
+	switch (phase)
 	{
-		DoModelDebug();
-		return;
+		case kChoose:
+			if (GetKeyState_SDL(SDL_SCANCODE_F1)) phase = kModel;
+			else if (GetKeyState_SDL(SDL_SCANCODE_F2)) phase = kSave;
+			else if (GetKeyState_SDL(SDL_SCANCODE_F3)) phase = kLose;
+			else if (GetKeyState_SDL(SDL_SCANCODE_F4)) phase = kSettings;
+			else
+			{
+				for (int i = 0; i < NUM_LEVELS; i++)
+				{
+					if (!GetKeyState_SDL(levelKeys[i]))
+						continue;
+					InitInventoryForGame();
+					gRealLevel = i;
+					gRestoringSavedGame = true;
+					phase = kGame;
+					return false;
+				}
+				return true;
+			}
+			return false;
+		case kModel:
+			if (!DoModelDebug()) return false;
+			break;
+		case kSave:
+			if (DoFileSelectScreen(FILE_SELECT_SCREEN_TYPE_SAVE) == -2) return false;
+			phase = kLoad;
+			return false;
+		case kLoad:
+			if (DoFileSelectScreen(FILE_SELECT_SCREEN_TYPE_LOAD) == -2) return false;
+			break;
+		case kLose:
+			if (!DoLoseScreen()) return false;
+			phase = kWin;
+			return false;
+		case kWin:
+			if (!DoWinScreen()) return false;
+			break;
+		case kSettings:
+			if (!DoSettingsScreen()) return false;
+			break;
+		case kGame:
+			if (!PlayGame()) return false;
+			break;
 	}
-
-	if (GetKeyState_SDL(SDL_SCANCODE_F2))
-	{
-		DoFileSelectScreen(FILE_SELECT_SCREEN_TYPE_SAVE);
-		DoFileSelectScreen(FILE_SELECT_SCREEN_TYPE_LOAD);
-		return;
-	}
-
-	if (GetKeyState_SDL(SDL_SCANCODE_F3))
-	{
-		DoLoseScreen();
-		DoWinScreen();
-		return;
-	}
-
-	if (GetKeyState_SDL(SDL_SCANCODE_F4))
-	{
-		DoSettingsScreen();
-		return;
-	}
-
-	for (int i = 0; i < 10; i++)
-	{
-		if (GetKeyState_SDL(levelKeys[i]))
-		{
-			InitInventoryForGame();
-			gRealLevel = i;
-			gRestoringSavedGame = true;
-			PlayGame();
-			return;
-		}
-	}
+	phase = kChoose;
+	return true;
 }
 
 
@@ -799,63 +799,65 @@ static void CheckDebugShortcutKeysOnBoot(void)
 
 int GameMain(void)
 {
-unsigned long	someLong;
+	enum { kBoot, kLegal, kDebug, kLogo, kTitle, kMenu, kGame };
+	static int phase;
 
-				/**************/
-				/* BOOT STUFF */
-				/**************/
-
-	TryOpenGamepad(true);
-
-	ToolBoxInit();
-
-			/* INIT SOME OF MY STUFF */
-
-	Render_CreateContext();
-	InitWindowStuff();
-	InitTerrainManager();
-	InitSkeletonManager();
-	InitSoundTools();
-	Init3DMFManager();	
-	InitFenceManager();
-
-
-			/* INIT MORE MY STUFF */
-					
-	InitObjectManager();
-	LoadInfobarArt();
-	
-	GetDateTime ((unsigned long *)(&someLong));		// init random seed
-	SetMyRandomSeed(someLong);
-
-
-
-			/* DO INTRO */
-
-	Pomme_FlushPtrTracking(false);
-
-	DoLegalScreen();
-
-	SDL_HideCursor();
-	WarpMouseToCenter();							// prime cursor position
-
-	CheckDebugShortcutKeysOnBoot();
-	DoPangeaLogo();
-
-
-		/* MAIN LOOP */
-			
-	while(true)
+	switch (phase)
 	{
-		DoTitleScreen();
-		if (DoMainMenu())
-			continue;
-		
-		PlayGame();
+		case kBoot:
+		{
+			unsigned long seed;
+			TryOpenGamepad(true);
+			ToolBoxInit();
+			Render_CreateContext();
+			InitWindowStuff();
+			InitTerrainManager();
+			InitSkeletonManager();
+			InitSoundTools();
+			Init3DMFManager();
+			InitFenceManager();
+			InitObjectManager();
+			LoadInfobarArt();
+			GetDateTime(&seed);
+			SetMyRandomSeed(seed);
+			Pomme_FlushPtrTracking(false);
+			QD3D_ResetFrameTimer();
+			phase = kLegal;
+			break;
+		}
+		case kLegal:
+			if (DoLegalScreen())
+			{
+				SDL_HideCursor();
+				WarpMouseToCenter();
+				phase = kDebug;
+			}
+			break;
+		case kDebug:
+			if (CheckDebugShortcutKeysOnBoot())
+				phase = kLogo;
+			break;
+		case kLogo:
+			if (DoPangeaLogo())
+				phase = kTitle;
+			break;
+		case kTitle:
+			if (DoTitleScreen())
+				phase = kMenu;
+			break;
+		case kMenu:
+		{
+			int result = DoMainMenu();
+			if (result >= 0)
+				phase = result ? kTitle : kGame;
+			break;
+		}
+		case kGame:
+			if (PlayGame())
+				phase = kTitle;
+			break;
 	}
-	
-	
-	return(0);
+	return 0;
 }
 
 

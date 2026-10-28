@@ -116,7 +116,7 @@ void Free3DMFGroup(Byte groupNum)
 
 	if (gObjectGroupFile[groupNum] != nil)
 	{
-		Q3MetaFile_Dispose(gObjectGroupFile[groupNum]);
+		Render_DisposeMetaFile(gObjectGroupFile[groupNum]);
 		gObjectGroupFile[groupNum] = nil;
 	}
 

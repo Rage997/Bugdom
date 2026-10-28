@@ -231,7 +231,7 @@ void DeleteAllParticleGroups(void)
 			// Free mesh memory
 			if (gParticleGroups[i].mesh)
 			{
-				Q3TriMeshData_Dispose(gParticleGroups[i].mesh);
+				Render_DisposeMesh(gParticleGroups[i].mesh);
 				gParticleGroups[i].mesh = nil;
 			}
 
@@ -702,6 +702,7 @@ static const TQ3Vector3D up = {0,1,0};
 
 					/* DRAW IT */
 
+		RenderWeb_InvalidateMesh(tm, kWebMeshGeometry | kWebMeshAttributes);
 		Render_SubmitMesh(tm, nil, &kParticleGroupRenderingMods, nil);
 	}
 }

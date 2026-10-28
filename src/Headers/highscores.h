@@ -65,5 +65,5 @@ enum
 
 //=================================================================
 
-void ShowHighScoresScreen(unsigned long newScore);
+bool ShowHighScoresScreen(unsigned long newScore);
 void ClearHighScores(void);

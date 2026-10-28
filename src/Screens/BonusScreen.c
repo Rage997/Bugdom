@@ -20,14 +20,14 @@ static void SetupBonusScreen(void);
 static void MoveBonusText(ObjNode *theNode);
 static void BuildBonusDigits(void);
 static void MoveBonusDigit(ObjNode *theNode);
-static void TallyLadyBugs(void);
-static void TallyTotalScore(void);
+static bool TallyLadyBugs(void);
+static bool TallyTotalScore(void);
 static void BuildScoreDigits(void);
-static Boolean AskSaveGame(void);
-static void DrawBonusStuff(float duration);
-static void TallyGreenClovers(void);
-static void TallyGoldClovers(void);
-static void TallyBlueClovers(void);
+static int AskSaveGame(void);
+static bool DrawBonusStuff(float duration);
+static bool TallyGreenClovers(void);
+static bool TallyGoldClovers(void);
+static bool TallyBlueClovers(void);
 
 
 /****************************/
@@ -74,58 +74,56 @@ static float	gMoveTextUpwards;
 
 /********************** DO BONUS SCREEN *************************/
 
-void DoBonusScreen(void)
+bool DoBonusScreen(void)
 {
-Boolean wantToSave = false;
-
-	
-			/*********/
-			/* SETUP */
-			/*********/
-
-	SetupUIStuff(kUIBackground_Cyclorama);
-	ShutdownAnalogCursor();
-	SetupBonusScreen();
-
-	QD3D_CalcFramesPerSecond();
-	QD3D_CalcFramesPerSecond();
-
-		/**************/
-		/* PROCESS IT */
-		/**************/
-				
-	DrawBonusStuff(1);
-	
-	TallyLadyBugs();
-	TallyGreenClovers();
-	TallyBlueClovers();
-	TallyGoldClovers();
-	TallyTotalScore();
-	
-	if (gRealLevel < LEVEL_NUM_ANTKING)		// dont save game if I just won the last level
-		wantToSave = AskSaveGame();
-	else
-		DrawBonusStuff(4);				// otherwise, just wait a while for user to see their score
-	
-			/* CLEANUP */
-
-	CleanupUIStuff();
-
-			/* SHOW FILE PICKER IF WANT TO SAVE */
-
-	if (wantToSave)
+	static int phase;
+	static bool wantToSave;
+	switch (phase)
 	{
-		if (gCurrentSaveSlot < 0)
-		{
-			gCurrentSaveSlot = DoFileSelectScreen(FILE_SELECT_SCREEN_TYPE_SAVE);
-		}
-
-		// Re-check current save slot. Maybe user doesn't want to save after all.
-		if (gCurrentSaveSlot >= 0)
-		{
-			SaveGame(gCurrentSaveSlot);
-		}
+		case 0:
+			wantToSave = false;
+			SetupUIStuff(kUIBackground_Cyclorama);
+			ShutdownAnalogCursor();
+			SetupBonusScreen();
+			QD3D_ResetFrameTimer();
+			phase = 1;
+			break;
+		case 1: if (DrawBonusStuff(1)) phase++; break;
+		case 2: if (TallyLadyBugs()) phase++; break;
+		case 3: if (TallyGreenClovers()) phase++; break;
+		case 4: if (TallyBlueClovers()) phase++; break;
+		case 5: if (TallyGoldClovers()) phase++; break;
+		case 6: if (TallyTotalScore()) phase++; break;
+		case 7:
+			if (gRealLevel < LEVEL_NUM_ANTKING)
+			{
+				int result = AskSaveGame();
+				if (result < 0) break;
+				wantToSave = result != 0;
+			}
+			else if (!DrawBonusStuff(4))
+				break;
+			phase = 8;
+			break;
+		case 8:
+			if (CleanupUIStuff()) phase = 9;
+			break;
+		case 9:
+			if (wantToSave)
+			{
+				if (gCurrentSaveSlot < 0)
+				{
+					int slot = DoFileSelectScreen(FILE_SELECT_SCREEN_TYPE_SAVE);
+					if (slot == -2) break;
+					gCurrentSaveSlot = slot;
+				}
+				if (gCurrentSaveSlot >= 0)
+					SaveGame(gCurrentSaveSlot);
+			}
+			phase = 0;
+			return true;
 	}
+	return false;
 }
 
 
@@ -377,23 +375,18 @@ float	fps = gFramesPerSecondFrac;
 
 /*************** TALLY LADY BUGS *******************/
 
-static void TallyLadyBugs(void)
+static bool TallyLadyBugs(void)
 {
-float	x;
-int		i;
-ObjNode	*ladybugs[100];
-
+	static int i;
+	static bool waiting;
+	static ObjNode* ladybugs[100];
 	if (gNumLadyBugsThisArea == 0)
-		return;
-
-	x = -((float)(gNumLadyBugsThisArea-1)*(LADYBUG_WIDTH/2.0f));
-
-		/*******************/
-		/* COUNT LADY BUGS */
-		/*******************/
-
-	for (i = 0; i < gNumLadyBugsThisArea; i++)
+		return true;
+	if (i < gNumLadyBugsThisArea)
 	{
+		if (!waiting)
+		{
+			float x = -(gNumLadyBugsThisArea - 1) * (LADYBUG_WIDTH / 2.0f) + i * LADYBUG_WIDTH;
 			/* GIMME A BUG */
 					
 		gNewObjectDefinition.type 		= SKELETON_TYPE_LADYBUG;
@@ -408,36 +401,42 @@ ObjNode	*ladybugs[100];
 		gNewObjectDefinition.scale 		= .12;
 		ladybugs[i] = MakeNewSkeletonObject(&gNewObjectDefinition);	
 	
-		x += LADYBUG_WIDTH;
 		gBonusValue += LADYBUG_BONUS_POINTS;
 		BuildBonusDigits();
 	
 		PlayEffect(EFFECT_BONUSCLICK);
-		DrawBonusStuff(.2);
-	}	
-	
-	DrawBonusStuff(1);	
+			waiting = true;
+		}
+		if (!DrawBonusStuff(.2f)) return false;
+		waiting = false;
+		i++;
+		return false;
+	}
+	if (!DrawBonusStuff(1)) return false;
 	
 			/* DELETE LADY BUGS */
 			
 	for (i = 0; i < gNumLadyBugsThisArea; i++)
 		DeleteObject(ladybugs[i]);
+	i = 0;
+	return true;
 
 }
 
 
-static void TallyClovers(int n, Byte mobjtype, float xSpacing, float scale, int pointsPerClover, short sfx)
+static bool TallyClovers(int n, Byte mobjtype, float xSpacing, float scale, int pointsPerClover, short sfx)
 {
-float	x,y;
-int		i,c;
-ObjNode	*clovers[MAX_CLOVERS_SHOWN];
-
-	if (n == 0)							// see if no clovers
-		return;
-
-	SDL_memset(clovers, 0, sizeof(clovers));	// clear clover pointers
-
-	DrawBonusStuff(1);
+	static float x, y;
+	static int phase, i, c;
+	static bool waiting;
+	static ObjNode* clovers[MAX_CLOVERS_SHOWN];
+	if (n == 0) return true;
+	if (phase == 0)
+	{
+		if (!DrawBonusStuff(1)) return false;
+		SDL_memset(clovers, 0, sizeof(clovers));
+		i = c = 0;
+		waiting = false;
 
 	if (n < MAX_CLOVERS_PER_ROW)
 		x = -(float)(n-1) * xSpacing/2.0f;
@@ -450,8 +449,13 @@ ObjNode	*clovers[MAX_CLOVERS_SHOWN];
 		/* COUNT CLOVERS */
 		/*****************/
 
-	for (c = i = 0; i < n; i++)
+		phase = 1;
+		return false;
+	}
+	if (i < n)
 	{
+		if (!waiting)
+		{
 			/* GIMME A CLOVER */
 
 		gNewObjectDefinition.group 		= MODEL_GROUP_BONUS;
@@ -473,8 +477,11 @@ ObjNode	*clovers[MAX_CLOVERS_SHOWN];
 		BuildBonusDigits();
 
 		PlayEffect(sfx);
-		DrawBonusStuff(.2);
-
+			waiting = true;
+		}
+		if (!DrawBonusStuff(.2f)) return false;
+		waiting = false;
+		i++;
 		c++;
 		if (c >= 14)
 		{
@@ -482,9 +489,9 @@ ObjNode	*clovers[MAX_CLOVERS_SHOWN];
 			y -= 15;
 			x = -(float)(MAX_CLOVERS_PER_ROW-1) * xSpacing/2.0f;
 		}
+		return false;
 	}
-
-	DrawBonusStuff(1);
+	if (!DrawBonusStuff(1)) return false;
 
 			/* DELETE CLOVERS */
 
@@ -493,13 +500,15 @@ ObjNode	*clovers[MAX_CLOVERS_SHOWN];
 		if (clovers[i])
 			DeleteObject(clovers[i]);
 	}
+	phase = 0;
+	return true;
 }
 
 /*************** TALLY GREEN CLOVERS *******************/
 
-static void TallyGreenClovers(void)
+static bool TallyGreenClovers(void)
 {
-	TallyClovers(
+	return TallyClovers(
 			gNumGreenClovers,
 			BONUS_MObjType_GreenClover,
 			GREEN_CLOVER_WIDTH,
@@ -511,9 +520,9 @@ static void TallyGreenClovers(void)
 
 /*************** TALLY BLUE CLOVERS *******************/
 
-static void TallyBlueClovers(void)
+static bool TallyBlueClovers(void)
 {
-	TallyClovers(
+	return TallyClovers(
 			gNumBlueClovers/4,			// calc # whole clovers
 			BONUS_MObjType_BlueClover,
 			BLUE_CLOVER_WIDTH,
@@ -526,9 +535,9 @@ static void TallyBlueClovers(void)
 
 /*************** TALLY GOLD CLOVERS *******************/
 
-static void TallyGoldClovers(void)
+static bool TallyGoldClovers(void)
 {
-	TallyClovers(
+	return TallyClovers(
 			gNumGoldClovers/4,			// calc # whole clovers
 			BONUS_MObjType_GoldClover,
 			GOLD_CLOVER_WIDTH,
@@ -541,9 +550,12 @@ static void TallyGoldClovers(void)
 
 /*************** TALLY TOTAL SCORE *******************/
 
-static void TallyTotalScore(void)
-{	
-	DrawBonusStuff(1);	
+static bool TallyTotalScore(void)
+{
+	static int phase;
+	if (phase == 0)
+	{
+		if (!DrawBonusStuff(1)) return false;
 
 		/* CREATE SCORE OBJECT */
 		
@@ -561,16 +573,24 @@ static void TallyTotalScore(void)
 
 	BuildScoreDigits();
 
-	DrawBonusStuff(1);	
+		phase = 1;
+		return false;
+	}
+	if (phase == 1)
+	{
+		if (!DrawBonusStuff(1)) return false;
+		phase = 2;
+		return false;
+	}
 
 
 		/****************/
 		/* TALLY POINTS */
 		/****************/
 
-	while(gBonusValue > 0)
+	if (gBonusValue > 0)
 	{
-		DrawBonusStuff(.05);	
+		if (!DrawBonusStuff(.05f)) return false;
 	
 		if (gBonusValue >= 500)
 		{
@@ -586,21 +606,28 @@ static void TallyTotalScore(void)
 		PlayEffect(EFFECT_BONUSCLICK);
 		BuildScoreDigits();
 		BuildBonusDigits();
+		return false;
 	}	
 	
-	DrawBonusStuff(1);	
+	if (!DrawBonusStuff(1)) return false;
+	phase = 0;
+	return true;
 	
 }
 
 
 /*************** ASK SAVE GAME *******************/
 
-static Boolean AskSaveGame(void)
+static int AskSaveGame(void)
 {
-int32_t id;
-int mouseX = 0;
-int mouseY = 0;
-
+	int32_t id;
+	int mouseX = 0, mouseY = 0;
+	static bool active;
+	static float moveTextUpwardsTween;
+	static bool captionsCreatedYet;
+	if (!active)
+	{
+		active = true;
 		/*************************/
 		/* CREATE YES/NO OBJECTS */
 		/*************************/
@@ -638,11 +665,12 @@ int mouseY = 0;
 	gSaveNo->PickID = 1;
 
 	gMoveTextUpwards = 0;
-	float moveTextUpwardsTween = 0;
-	bool captionsCreatedYet = false;
+	moveTextUpwardsTween = 0;
+	captionsCreatedYet = false;
 
 	InitAnalogCursor();
-	while(true)
+		return -1;
+	}
 	{
 		moveTextUpwardsTween += gFramesPerSecondFrac;
 
@@ -679,33 +707,32 @@ int mouseY = 0;
 		MoveAnalogCursor(&mouseX, &mouseY);
 		MoveObjects();
 		QD3D_DrawScene(gGameViewInfoPtr,DrawObjects);
-		QD3D_CalcFramesPerSecond();				
 		DoSDLMaintenance();
 
-		if (IsAnalogCursorClicked() && PickObject(mouseX, mouseY, &id))
-		{
-			break;
-		}
+		if (!IsAnalogCursorClicked() || !PickObject(mouseX, mouseY, &id))
+			return -1;
 	}
 	ShutdownAnalogCursor();
 
 		/* SEE IF SAVE GAME */
 
+	active = false;
 	return id == 0;
 }
 
 
 /******************* DRAW BONUS STUFF ********************/
 
-static void DrawBonusStuff(float duration)
+static bool DrawBonusStuff(float duration)
 {
-	do
-	{
-		UpdateInput();
-		MoveObjects();
-		QD3D_DrawScene(gGameViewInfoPtr,DrawObjects);
-		QD3D_CalcFramesPerSecond();				
-		DoSDLMaintenance();
-	}while((duration -= gFramesPerSecondFrac) > 0.0f);
+	static float elapsed;
+	UpdateInput();
+	MoveObjects();
+	QD3D_DrawScene(gGameViewInfoPtr, DrawObjects);
+	DoSDLMaintenance();
+	elapsed += gFramesPerSecondFrac;
+	if (elapsed < duration) return false;
+	elapsed = 0;
+	return true;
 }
 

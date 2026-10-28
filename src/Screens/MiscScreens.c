@@ -78,7 +78,7 @@ static void CheckPauseCameraKeys(void)
 
 /************************ DO PAUSED ******************************/
 
-void DoPaused(void)
+bool DoPaused(void)
 {
 enum
 {
@@ -90,7 +90,18 @@ enum
 
 float		dummy;
 const float imageAspectRatio = 200.0f/152.0f;
-int curState = kPauseChoice_Resume;
+static int curState;
+static bool active;
+static GLuint textures[NUM_PAUSE_TEXTURES];
+static TQ3Point2D prevMousePos;
+static bool ignoreThumbstick;
+const float xs = .4f;
+const float ys = xs / imageAspectRatio;
+
+	if (!active)
+	{
+		active = true;
+		curState = kPauseChoice_Resume;
 
 
 	PauseAllChannels(true);
@@ -103,7 +114,6 @@ int curState = kPauseChoice_Resume;
 
 			/* PRELOAD TEXTURES */
 
-	GLuint textures[NUM_PAUSE_TEXTURES];
 	int loadFlags = kRendererTextureFlags_ClampBoth;
 #if OSXPPC
 	loadFlags |= kRendererTextureFlags_ForcePOT;
@@ -121,8 +131,6 @@ int curState = kPauseChoice_Resume;
 	gPauseQuad->glTextureName = textures[curState];		// resume
 	gPauseQuad->diffuseColor = (TQ3ColorRGBA) {1, 1, 1, 1};
 
-	float xs = .4f;
-	float ys = xs/imageAspectRatio;
 
 	gPauseQuad->points[0] = (TQ3Point3D) { -xs, -ys, 0 };
 	gPauseQuad->points[1] = (TQ3Point3D) { +xs, -ys, 0 };
@@ -139,22 +147,22 @@ int curState = kPauseChoice_Resume;
 			/*******************/
 
 
-	TQ3Point2D prevMousePos = GetMousePosition();
+		prevMousePos = GetMousePosition();
+		ignoreThumbstick = true;
+		ResetInputState();
+		return false;
+	}
 
-	bool ignoreThumbstick = true;
-
-	while (1)
 	{
 		QD3D_DrawScene(gGameViewInfoPtr, DrawTerrain);
 		DoSDLMaintenance();
 		UpdateInput();
-		SDL_Delay(10);
 
 
 		if (GetNewKeyState(kKey_Pause) || GetNewKeyState(kKey_UI_Cancel))						// see if ESC out
 		{
 			curState = kPauseChoice_Resume;
-			break;
+			goto complete;
 		}
 
 		if (gPauseQuad->diffuseColor.a >= 0.9f)
@@ -235,14 +243,17 @@ int curState = kPauseChoice_Resume;
 			if (newState != kPauseChoice_Null		// ensure mouse is within frame to proceed
 				&& (FlushMouseButtonPress() || GetNewKeyState(kKey_UI_Confirm) || GetNewKeyState(kKey_UI_PadConfirm)))
 			{
-				break;
+				goto complete;
 			}
 		}
 
 		// Check </> keys to prepare good-looking screenshots
 		CheckPauseCameraKeys();
 	}
-	while(FlushMouseButtonPress());							// wait for button up
+	return false;
+
+complete:
+	FlushMouseButtonPress();
 
 	ResetInputState();
 
@@ -251,7 +262,7 @@ int curState = kPauseChoice_Resume;
 			/* FREE MESH/TEXTURES */
 
 	glDeleteTextures(NUM_PAUSE_TEXTURES, textures);
-	Q3TriMeshData_Dispose(gPauseQuad);
+	Render_DisposeMesh(gPauseQuad);
 	gPauseQuad = nil;
 
 			/* HANDLE RESULT */
@@ -272,8 +283,6 @@ int curState = kPauseChoice_Resume;
 
 			/* CLEANUP */
 			
-	QD3D_CalcFramesPerSecond();
-	QD3D_CalcFramesPerSecond();
 	
 	gPlayerObj->AccelVector.x =					// neutralize this
 	gPlayerObj->AccelVector.y = 0;
@@ -281,6 +290,8 @@ int curState = kPauseChoice_Resume;
 	GetMouseDelta(&dummy,&dummy);				// read this once to prevent mouse boom
 
 	PauseAllChannels(false);
+	active = false;
+	return true;
 }
 
 
@@ -289,7 +300,7 @@ int curState = kPauseChoice_Resume;
 
 /********************** DO PANGEA LOGO **********************************/
 
-void DoPangeaLogo(void)
+bool DoPangeaLogo(void)
 {
 OSErr		err;
 TQ3Point3D			cameraFrom = { 0, 0, 70.0 };
@@ -299,8 +310,14 @@ TQ3ColorRGB				lightColor = { 1.0, 1.0, .9 };
 TQ3Vector3D				fillDirection1 = { 1, -.4, -.8 };			// key
 TQ3Vector3D				fillDirection2 = { -.7, -.2, -.9 };			// fill
 
-float			fotime = 0;
-Boolean			fo = false;
+static float fotime;
+static Boolean fo;
+static int phase;
+
+	if (phase == 0)
+	{
+		fotime = 0;
+		fo = false;
 
 	GameScreenToBlack();
 
@@ -379,19 +396,17 @@ Boolean			fo = false;
 			/*************/
 			
 	PlaySong(SONG_PANGEA,false);			
-	QD3D_CalcFramesPerSecond();					
+		phase = 1;
+		QD3D_ResetFrameTimer();
+		return false;
+	}
 
-	while (gSongPlayingFlag)					// wait until song stops
+	if (phase == 1 && gSongPlayingFlag)
 	{
-		QD3D_CalcFramesPerSecond();					
 	
 		UpdateInput();
 		if (GetSkipScreenInput())
-		{
-			if (!fo)
-				GammaFadeOut(true);
-			break;
-		}
+			phase = 2;
 
 		MoveObjects();
 
@@ -405,7 +420,12 @@ Boolean			fo = false;
 		}		
 
 		DoSDLMaintenance();
+		if (phase == 1)
+			return false;
 	}
+
+	if (phase == 2 && !GammaFadeOut(true))
+		return false;
 
 
 			/***********/
@@ -418,6 +438,8 @@ Boolean			fo = false;
 	KillSong();
 	GameScreenToBlack();
 	Pomme_FlushPtrTracking(true);
+	phase = 0;
+	return true;
 }
 
 

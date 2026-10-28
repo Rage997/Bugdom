@@ -95,6 +95,7 @@ void DoSDLMaintenance(void)
 			case SDL_EVENT_WINDOW_FOCUS_LOST:
 				// On Mac, always restore system mouse accel if cmd-tabbing away from the game
 				SetMacLinearMouse(0);
+				ClearInputStates();
 				break;
 
 			case SDL_EVENT_WINDOW_FOCUS_GAINED:
@@ -110,7 +111,11 @@ void DoSDLMaintenance(void)
 				break;
 
 			case SDL_EVENT_MOUSE_MOTION:
-				if (!gEatMouse)
+				if (!gEatMouse
+#ifdef __EMSCRIPTEN__
+					&& (!gIsInGame || gIsGamePaused || SDL_GetWindowRelativeMouseMode(gSDLWindow))
+#endif
+				)
 					MouseSmoothing_OnMouseMotion(&event.motion);
 				break;
 
@@ -136,6 +141,8 @@ void DoSDLMaintenance(void)
 		gDebugTextLastUpdatedAt = 0;
 		QD3D_UpdateDebugTextMesh(NULL);
 
+#ifndef __EMSCRIPTEN__
 		glPolygonMode(GL_FRONT_AND_BACK, gDebugMode == DEBUG_MODE_WIREFRAME? GL_LINE: GL_FILL);
+	#endif
 	}
 }

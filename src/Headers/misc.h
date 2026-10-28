@@ -5,6 +5,7 @@
 void DoAlert(const char* format, ...);
 POMME_NORETURN void DoFatalAlert(const char* format, ...);
 POMME_NORETURN void CleanQuit(void);
+bool GameShutdownFrame(void);
 
 #define AllocHandle(size) NewHandleClear((size))
 #define AllocPtr(size) NewPtrClear((size))

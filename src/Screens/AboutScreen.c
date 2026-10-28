@@ -36,53 +36,47 @@ static const short kAboutScreenObjNodeSlot = 1337;
 
 /********************** DO BONUS SCREEN *************************/
 
-void DoAboutScreens(void)
+bool DoAboutScreens(void)
 {
-	/*********/
-	/* SETUP */
-	/*********/
-
-	SetupUIStuff(kUIBackground_Black);
-	ShutdownAnalogCursor();
-	QD3D_CalcFramesPerSecond();
-
-	/**************/
-	/* PROCESS IT */
-	/**************/
-
-	MakeFadeEvent(true);
-
-	for (int i = 0; i < 3; i++)
+	static int phase, slide;
+	static bool needSlide;
+	if (phase == 0)
 	{
-#if NOJOYSTICK
-		// Skip gamepad slide
-		if (i == 1)
-			i++;
-#endif
-
-		NukeObjectsInSlot(kAboutScreenObjNodeSlot);		// nuke text from previous slide
-
-		MakeAboutScreenObjects(i);
-
-		FlushMouseButtonPress();
-
-		while (1)
-		{
-			UpdateInput();
-			MoveObjects();
-			QD3D_MoveShards();
-			QD3D_DrawScene(gGameViewInfoPtr, AboutScreenDrawStuff);
-			QD3D_CalcFramesPerSecond();
-			DoSDLMaintenance();
-
-			if (GetSkipScreenInput())
-				break;
-		}
+		SetupUIStuff(kUIBackground_Black);
+		ShutdownAnalogCursor();
+		MakeFadeEvent(true);
+		slide = 0;
+		needSlide = true;
+		phase = 1;
+		QD3D_ResetFrameTimer();
 	}
-
-	/* CLEANUP */
-
-	CleanupUIStuff();
+	if (phase == 1)
+	{
+		if (needSlide)
+		{
+#if NOJOYSTICK
+			if (slide == 1) slide++;
+#endif
+			NukeObjectsInSlot(kAboutScreenObjNodeSlot);
+			MakeAboutScreenObjects(slide);
+			FlushMouseButtonPress();
+			needSlide = false;
+		}
+		UpdateInput();
+		MoveObjects();
+		QD3D_MoveShards();
+		QD3D_DrawScene(gGameViewInfoPtr, AboutScreenDrawStuff);
+		DoSDLMaintenance();
+		if (GetSkipScreenInput())
+		{
+			if (++slide == 3) phase = 2;
+			else needSlide = true;
+		}
+		return false;
+	}
+	if (!CleanupUIStuff()) return false;
+	phase = 0;
+	return true;
 }
 
 /****************** SETUP FILE SCREEN **************************/
@@ -217,7 +211,10 @@ static void MakeAboutScreenObjects(int slideNumber)
 
 			MAKE_CONTROL_TEXT("Shift (when using mouse)"		, ""				, "Auto-Walk");
 			MAKE_CONTROL_TEXT("Arrows"		, "or     Mouse"	, "Walk/Roll");
-#if __APPLE__
+#if defined(__EMSCRIPTEN__)
+			MAKE_CONTROL_TEXT("C"			, "or     Left click"		, "Kick/Boost");
+			MAKE_CONTROL_TEXT("X"			, "or     Right click"		, "Jump");
+#elif __APPLE__
 			MAKE_CONTROL_TEXT("Option"		, "or     Left click"		, "Kick/Boost");
 			MAKE_CONTROL_TEXT("Command"		, "or     Right click"		, "Jump");
 #else
@@ -288,9 +285,13 @@ static void MakeLegalScreenObjects(void)
 	TextMesh_Create(&tmd, "\223Bugdom\224 is a registered trademark of Pangea Software, Inc.");
 }
 
-void DoLegalScreen(void)
+bool DoLegalScreen(void)
 {
-	/*********/
+	static int phase;
+	static float timeout;
+	if (phase == 0)
+	{
+		timeout = 8;
 	/* SETUP */
 	/*********/
 
@@ -299,7 +300,6 @@ void DoLegalScreen(void)
 	NukeObjectsInSlot(kAboutScreenObjNodeSlot);		// nuke text from previous slide
 	MakeLegalScreenObjects();
 
-	QD3D_CalcFramesPerSecond();
 	
 	MakeFadeEvent(true);
 	FlushMouseButtonPress();
@@ -308,24 +308,26 @@ void DoLegalScreen(void)
 	/* PROCESS IT */
 	/**************/
 
-	float timeout = 8.0f;
-
-	while (timeout > 0)
+		phase = 1;
+		QD3D_ResetFrameTimer();
+		return false;
+	}
+	if (phase == 1)
 	{
 		UpdateInput();
 		MoveObjects();
 		QD3D_MoveShards();
 		QD3D_DrawScene(gGameViewInfoPtr, AboutScreenDrawStuff);
-		QD3D_CalcFramesPerSecond();
 		DoSDLMaintenance();
 
-		if (GetSkipScreenInput())
-			break;
-
 		timeout -= gFramesPerSecondFrac;
+		if (!GetSkipScreenInput() && timeout > 0) return false;
+		phase = 2;
 	}
 
 	/* CLEANUP */
 
-	CleanupUIStuff();
+	if (!CleanupUIStuff()) return false;
+	phase = 0;
+	return true;
 }

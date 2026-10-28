@@ -4,6 +4,9 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #include "Pomme.h"
 #include "PommeInit.h"
@@ -86,6 +89,11 @@ static void Boot(int argc, char** argv)
 	SDL_SetLogPriorities(SDL_LOG_PRIORITY_INFO);
 #endif
 
+#ifdef __EMSCRIPTEN__
+	setenv("XDG_CONFIG_HOME", "/storage/bugdom", 1);
+	SDL_SetHint(SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT, "#canvas");
+#endif
+
 	// Start our "machine"
 	Pomme::Init();
 
@@ -100,8 +108,14 @@ retryVideo:
 	}
 
 	// Create window
+#ifdef __EMSCRIPTEN__
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+	gGamePrefs.antialiasingLevel = 0;
+#else
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+#endif
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
 
 	gCurrentAntialiasingLevel = gGamePrefs.antialiasingLevel;
@@ -130,7 +144,9 @@ retryVideo:
 		initialHeight,
 		SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
 
+#ifndef __EMSCRIPTEN__
 	MoveToPreferredDisplay();
+#endif
 
 	if (!gSDLWindow)
 	{
@@ -158,7 +174,7 @@ retryVideo:
 		auto gamecontrollerdbPath8 = (dataPath / "System" / "gamecontrollerdb.txt").u8string();
 		if (-1 == SDL_AddGamepadMappingsFromFile((const char*)gamecontrollerdbPath8.c_str()))
 		{
-			SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_WARNING, GAME_FULL_NAME, "Couldn't load gamecontrollerdb.txt!", gSDLWindow);
+			DoAlert("Couldn't load gamecontrollerdb.txt!");
 		}
 	}
 }
@@ -179,6 +195,79 @@ static void Shutdown()
 	SDL_Quit();
 }
 
+static bool RunGameFrame()
+{
+	static bool quitting = false;
+	QD3D_CalcFramesPerSecond();
+	try
+	{
+		if (quitting)
+			return !GameShutdownFrame();
+		GameMain();
+	}
+	catch (Pomme::QuitRequest&)
+	{
+		quitting = true;
+	}
+	return true;
+}
+
+#ifdef __EMSCRIPTEN__
+static bool webSuspended;
+
+extern "C" EMSCRIPTEN_KEEPALIVE void WebSuspend(int suspended)
+{
+	if (!gSDLWindow || webSuspended == (suspended != 0))
+		return;
+	webSuspended = suspended != 0;
+	PauseAllChannels(webSuspended || gIsGamePaused);
+	ClearInputStates();
+	QD3D_ResetFrameTimer();
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void WebResize(int width, int height)
+{
+	if (!gSDLWindow || width < 1 || height < 1)
+		return;
+	SDL_SetWindowSize(gSDLWindow, width, height);
+	int pixelWidth, pixelHeight;
+	SDL_GetWindowSizeInPixels(gSDLWindow, &pixelWidth, &pixelHeight);
+	QD3D_OnWindowResized(pixelWidth, pixelHeight);
+}
+
+extern "C" EMSCRIPTEN_KEEPALIVE void WebClearInput(void)
+{
+	if (gSDLWindow)
+		ClearInputStates();
+}
+
+static void WebFrame()
+{
+	if (webSuspended)
+		return;
+	try
+	{
+		if (RunGameFrame())
+			return;
+		emscripten_cancel_main_loop();
+		Shutdown();
+		EM_ASM({ Module['onExit'](); });
+	}
+	catch (std::exception& error)
+	{
+		emscripten_cancel_main_loop();
+		EM_ASM({ Module['reportError'](UTF8ToString($0)); }, error.what());
+		Shutdown();
+	}
+	catch (...)
+	{
+		emscripten_cancel_main_loop();
+		EM_ASM({ Module['reportError']('Unknown game error'); });
+		Shutdown();
+	}
+}
+#endif
+
 int main(int argc, char** argv)
 {
 	bool success = true;
@@ -187,13 +276,19 @@ int main(int argc, char** argv)
 	try
 	{
 		Boot(argc, argv);
-		GameMain();
+		QD3D_ResetFrameTimer();
+#ifdef __EMSCRIPTEN__
+		emscripten_set_main_loop(WebFrame, 0, false);
+		return 0;
+#else
+		while (RunGameFrame()) {}
+#endif
 	}
 	catch (Pomme::QuitRequest&)
 	{
 		// no-op, the game may throw this exception to shut us down cleanly
 	}
-#if !(_DEBUG)
+#if !(_DEBUG) || defined(__EMSCRIPTEN__)
 	// In release builds, catch anything that might be thrown by GameMain
 	// so we can show an error dialog to the user.
 	catch (std::exception& ex)		// Last-resort catch
@@ -213,7 +308,11 @@ int main(int argc, char** argv)
 	if (!success)
 	{
 		SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Uncaught exception: %s", uncaught.c_str());
+#ifdef __EMSCRIPTEN__
+		EM_ASM({ Module['reportError'](UTF8ToString($0)); }, uncaught.c_str());
+#else
 		SDL_ShowSimpleMessageBox(0, GAME_FULL_NAME ": Uncaught exception", uncaught.c_str(), nullptr);
+#endif
 	}
 
 	return success ? 0 : 1;

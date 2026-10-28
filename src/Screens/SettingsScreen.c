@@ -16,12 +16,14 @@
 
 static const char* GenerateKiddieModeSubtitle(void);
 static const char* GenerateDetailSubtitle(void);
+#ifndef __EMSCRIPTEN__
 static const char* GenerateMSAASubtitle(void);
 
 static void OnChangeFullscreenMode(void)
 {
 	SetFullscreenMode(true);
 }
+#endif
 
 /****************************/
 /*    CONSTANTS             */
@@ -134,6 +136,7 @@ static const SettingEntry gSettingsMenu[] =
 
 static SettingEntry gVideoMenu[] =
 {
+#ifndef __EMSCRIPTEN__
 	{
 		.kind = kCycler,
 		.ptr = &gGamePrefs.fullscreen,
@@ -142,6 +145,7 @@ static SettingEntry gVideoMenu[] =
 		.nChoices = 2,
 		.choices = {"No", "Yes"},
 	},
+#endif
 
 	{
 		.kind = kCycler,
@@ -160,6 +164,7 @@ static SettingEntry gVideoMenu[] =
 		.choices = {"Fit to screen", "Pillarboxed 4:3"},
 	},
 
+#ifndef __EMSCRIPTEN__
 	{
 		.kind = kCycler,
 		.ptr = &gGamePrefs.antialiasingLevel,
@@ -187,6 +192,7 @@ static SettingEntry gVideoMenu[] =
 			"Display 8",
 		},
 	},
+#endif
 
 	// End sentinel
 	{
@@ -223,12 +229,14 @@ static const char* GenerateDetailSubtitle(void)
 	return gGamePrefs.lowDetail ? "The \223ATI Rage II\224 look" : NULL;
 }
 
+#ifndef __EMSCRIPTEN__
 static const char* GenerateMSAASubtitle(void)
 {
 	return gGamePrefs.antialiasingLevel != gCurrentAntialiasingLevel
 		? "Will apply when you restart the game"
 		: NULL;
 }
+#endif
 
 /****************** SETUP SETTINGS SCREEN **************************/
 
@@ -376,6 +384,7 @@ static void SetupSettingsScreen(const char* title, const SettingEntry* menu)
 	MakeSpiderButton((TQ3Point3D) {-100, -100, 0}, "DONE", PICKID_SPIDER);
 }
 
+#ifndef __EMSCRIPTEN__
 static void MakeMSAAWarning(void)
 {
 	TextMeshDef tmd;
@@ -387,6 +396,7 @@ static void MakeMSAAWarning(void)
 
 	TextMesh_Create(&tmd, "The new antialiasing level will take effect when you restart the game.");
 }
+#endif
 
 /******************* DO SETTINGS SCREEN ********************/
 
@@ -419,14 +429,16 @@ static void FillCuratedDisplayModeOptions(void)
 }
 #endif
 
-void DoSettingsScreen(void)
+bool DoSettingsScreen(void)
 {
+	static int phase;
+	if (phase == 0)
+	{
 #if OSXPPC
 	FillCuratedDisplayModeOptions();
 #endif
 
 	SetupSettingsScreen("Settings", gSettingsMenu);
-	bool done = false;
 
 	for (int i = 0; gVideoMenu[i].kind != kEND_SENTINEL; i++)
 	{
@@ -436,19 +448,37 @@ void DoSettingsScreen(void)
 		}
 	}
 
-	while (!done)
+		phase = 1;
+		QD3D_ResetFrameTimer();
+		return false;
+	}
+	if (phase == 2 || phase == 3)
+	{
+		if (!CleanupUIStuff()) return false;
+		if (phase == 3)
+		{
+			SavePrefs(&gGamePrefs);
+			phase = 0;
+			return true;
+		}
+		SetupSettingsScreen("Video settings", gVideoMenu);
+#ifndef __EMSCRIPTEN__
+		MakeMSAAWarning();
+#endif
+		phase = 1;
+		return false;
+	}
 	{
 		UpdateInput();
 		MoveObjects();
 		QD3D_MoveShards();
 		QD3D_DrawScene(gGameViewInfoPtr, SettingsScreenDrawStuff);
-		QD3D_CalcFramesPerSecond();
 		DoSDLMaintenance();
 
 		if (GetNewKeyState(kKey_UI_Cancel))
 		{
-			done = true;
-			continue;
+			phase = 3;
+			return false;
 		}
 
 		// See if user hovered/clicked on a pickable item
@@ -471,21 +501,18 @@ void DoSettingsScreen(void)
 				switch (gCurrentMenu[settingID].id)
 				{
 				case 'vide':
-					CleanupUIStuff();
-					SetupSettingsScreen("Video settings", gVideoMenu);
-					MakeMSAAWarning();
+					phase = 2;
+					return false;
 				}
 			}
 			else if (pickID == PICKID_SPIDER)
 			{
 				PlayEffect_Parms(EFFECT_BONUSCLICK, FULL_CHANNEL_VOLUME, FULL_CHANNEL_VOLUME, kMiddleC-12);
-				done = true;
-				continue;
+				phase = 3;
+				return false;
 			}
 		}
 	}
 
-	CleanupUIStuff();
-
-	SavePrefs(&gGamePrefs);
+	return false;
 }

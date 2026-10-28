@@ -103,27 +103,25 @@ static bool			gFileScreenAwaitingInput = true;
 
 int DoFileSelectScreen(int type)
 {
-	gCurrentFileScreenType = type;
-
-	/*********/
-	/* SETUP */
-	/*********/
-
-	SetupUIStuff(kUIBackground_Cyclorama);
-	SetupFileScreen();
-
-	QD3D_CalcFramesPerSecond();
-
-	/**************/
-	/* PROCESS IT */
-	/**************/
-
-	int picked = FileScreenMainLoop();
-
-	/* CLEANUP */
-
-	CleanupUIStuff();
-
+	static int phase, picked;
+	if (phase == 0)
+	{
+		gCurrentFileScreenType = type;
+		gFileScreenAwaitingInput = true;
+		SetupUIStuff(kUIBackground_Cyclorama);
+		SetupFileScreen();
+		QD3D_ResetFrameTimer();
+		phase = 1;
+		return -2;
+	}
+	if (phase == 1)
+	{
+		picked = FileScreenMainLoop();
+		if (picked == -2) return -2;
+		phase = 2;
+	}
+	if (!CleanupUIStuff()) return -2;
+	phase = 0;
 	return picked;
 }
 
@@ -466,17 +464,13 @@ static void FileScreenDrawStuff(const QD3DSetupOutputType *setupInfo)
 
 static int FileScreenMainLoop()
 {
-	gFileScreenAwaitingInput = true;
-	int finalPick = -1;
-	float transitionAwayTime = 0;
-
-	while (1)
+	static int finalPick;
+	static float transitionAwayTime;
 	{
 		UpdateInput();
 		MoveObjects();
 		QD3D_MoveShards();
 		QD3D_DrawScene(gGameViewInfoPtr, FileScreenDrawStuff);
-		QD3D_CalcFramesPerSecond();
 		DoSDLMaintenance();
 
 		// See if user hovered/clicked on a pickable item
@@ -526,4 +520,5 @@ static int FileScreenMainLoop()
 				return finalPick;
 		}
 	}
+	return -2;
 }

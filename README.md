@@ -1,11 +1,18 @@
 # Bugdom
 
-This is Pangea Software's **Bugdom** updated to run on modern operating systems.
-This version, at https://github.com/jorio/bugdom, is approved by Pangea Software.
+This is Pangea Software's **Bugdom**, updated for modern operating systems and adapted here for the web.
+Based on [Iliyas Jorio's desktop port](https://github.com/jorio/bugdom), made with Pangea Software's permission.
 
 **Download the game for macOS, Windows and Linux here:** https://github.com/jorio/bugdom/releases
 
 ![Bugdom Screenshot](docs/screenshot.webp)
+
+## Play in a browser
+
+Requires WebGL2 and saves progress in your browser. See [build and hosting instructions](BUILD.md#how-to-build-for-the-web); no public deployment is configured.
+
+Desktop controls: **Arrows/WASD** to move, **X** to jump, **C** to kick, **Space** to roll, **Tab** for the buddy bug, and **Escape** to pause. Click the canvas for mouse capture. Touch-only play is not supported.
+
 
 ## About this port
 
@@ -23,7 +30,7 @@ A port of the sequel is also available: [Bugdom 2](https://github.com/jorio/Bugd
 
 ## Documentation
 
-- [BUILD.md](BUILD.md) — How to build on macOS, Windows or Linux.
+- [BUILD.md](BUILD.md) — How to build for the web, macOS, Windows, or Linux, and deploy the static browser build.
 - [CHANGELOG.md](CHANGELOG.md) — Bugdom version history.
 - [LICENSE.md](LICENSE.md) — Licensing information (see also below).
 - [Instructions.pdf](docs/Instructions.pdf) — Original instruction manual. Int'l versions:

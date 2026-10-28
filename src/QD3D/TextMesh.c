@@ -147,6 +147,7 @@ TQ3TriMeshData* TextMesh_SetMesh(const TextMeshDef* def, const char* text, TQ3Tr
 
 	GAME_ASSERT(p == mesh->numPoints);
 
+	RenderWeb_InvalidateMesh(mesh, kWebMeshAll);
 	return mesh;
 }
 

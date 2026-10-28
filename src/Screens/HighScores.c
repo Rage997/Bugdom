@@ -10,6 +10,9 @@
 /****************************/
 
 #include "game.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 
 /****************************/
@@ -17,8 +20,8 @@
 /****************************/
 
 static void SetupHighScoresScreen(void);
-static void AddNewScore(unsigned long newScore);
-static void EnterPlayerName(unsigned long newScore);
+static bool AddNewScore(unsigned long newScore);
+static bool EnterPlayerName(unsigned long newScore);
 static void MoveCursor(ObjNode *theNode);
 static void TypeNewKey(char c);
 static void UpdateNameAndCursor(Boolean doCursor, float x, float y, float z);
@@ -66,10 +69,12 @@ Boolean			gEnteringName = false;
 // INPUT: 	newScore = score to try to add, 0 == just show me
 //
 
-void ShowHighScoresScreen(unsigned long newScore)
+bool ShowHighScoresScreen(unsigned long newScore)
 {
-TQ3Vector3D	camDelta = {0,0,0};
-
+	TQ3Vector3D camDelta = {0,0,0};
+	static int phase;
+	if (phase == 0)
+	{
 	PlaySong(SONG_HIGHSCORES,true);
 
 			/* INIT */
@@ -80,23 +85,30 @@ TQ3Vector3D	camDelta = {0,0,0};
 	
 		/* ADD NEW SCORE */
 			
-	AddNewScore(newScore);
+		phase = 1;
+		QD3D_ResetFrameTimer();
+		return false;
+	}
+	if (phase == 1)
+	{
+		if (!AddNewScore(newScore)) return false;
 	
 
 		/*************************/
 		/* PREP HIGH SCORES SHOW */
 		/*************************/
 		
-	PrepHighScoresShow();
+		PrepHighScoresShow();
+		phase = 2;
+	}
 
 		
 			/*******************/
 			/* SHOW THE SCORES */
 			/*******************/
 
-	do
+	if (phase == 2)
 	{
-		QD3D_CalcFramesPerSecond();					
 		MoveObjects();
 		
 				/* MOVE CAMERA */
@@ -111,21 +123,23 @@ TQ3Vector3D	camDelta = {0,0,0};
 		DoSDLMaintenance();
 
 		UpdateInput();
-		if (GetSkipScreenInput())
-			break;		
-			
-	}while(gGameViewInfoPtr->currentCameraCoords.y > -500);
+		if (!GetSkipScreenInput() && gGameViewInfoPtr->currentCameraCoords.y > -500)
+			return false;
+		phase = 3;
+	}
 	
 	
 			/* CLEANUP */
 
-	GammaFadeOut(true);
+	if (!GammaFadeOut(true)) return false;
 	DeleteAllObjects();
 	QD3D_DisposeWindowSetup(&gGameViewInfoPtr);
 	Free3DMFGroup(MODEL_GROUP_HIGHSCORES);
 	DisposeSoundBank(SOUNDBANK_MAIN);
 	GameScreenToBlack();
 	Pomme_FlushPtrTracking(true);
+	phase = 0;
+	return true;
 }
 
 
@@ -259,7 +273,10 @@ err:
 				
 	count = sizeof(HighScoreType) * NUM_SCORES;
 	FSWrite(refNum, &count, (Ptr)&gHighScores[0]);
-	FSClose(refNum);			
+	FSClose(refNum);
+#ifdef __EMSCRIPTEN__
+	EM_ASM({ Module['persist'](); });
+#endif
 
 }
 
@@ -286,7 +303,7 @@ char				blank[] = "               ";
 
 /*************************** ADD NEW SCORE ****************************/
 
-static void AddNewScore(unsigned long newScore)
+static bool AddNewScore(unsigned long newScore)
 {
 short	slot,i;
 
@@ -297,13 +314,13 @@ short	slot,i;
 		if (newScore > gHighScores[slot].score)
 			goto	got_slot;
 	}
-	return;
+	return true;
 	
 	
 got_slot:
 			/* GET PLAYER'S NAME */
 			
-	EnterPlayerName(newScore);
+	if (!EnterPlayerName(newScore)) return false;
 	
 			/* INSERT INTO LIST */
 
@@ -314,18 +331,27 @@ got_slot:
 			/* UPDATE THE FILE */
 			
 	SaveHighScores();
+	return true;
 }
 
 #pragma mark -
 
 /******************** ENTER PLAYER NAME **************************/
 
-static void EnterPlayerName(unsigned long newScore)
+static bool EnterPlayerName(unsigned long newScore)
 {
-TQ3Point3D	camPt = gGameViewInfoPtr->currentCameraCoords;
-float		camWobble = 0;
-short		i;
-
+	static TQ3Point3D camPt;
+	static float camWobble;
+	static float keyRepeatTimer;
+	static bool active;
+	char newKey = '\0';
+	short i;
+	if (!active)
+	{
+		active = true;
+		camPt = gGameViewInfoPtr->currentCameraCoords;
+		camWobble = 0;
+		keyRepeatTimer = 0;
 				/*********/
 				/* SETUP */
 				/*********/
@@ -385,16 +411,12 @@ short		i;
 			/* MAIN LOOP */
 			/*************/
 		
-	QD3D_CalcFramesPerSecond();					
-		
-	gEnteringName = true;
-
-	float keyRepeatTimer = 0;
-	char newKey = '\0';
-		
-	do
+		gEnteringName = true;
+		SDL_StartTextInput(gSDLWindow);
+		ResetInputState();
+		return false;
+	}
 	{
-		QD3D_CalcFramesPerSecond();					
 		MoveObjects();
 		
 				/* CHECK FOR KEY */
@@ -487,12 +509,16 @@ short		i;
 				
 		QD3D_DrawScene(gGameViewInfoPtr,DrawObjects);	
 		DoSDLMaintenance();
-	} while (newKey != CHAR_RETURN);
+	}
+	if (newKey != CHAR_RETURN) return false;
 
 			/* CLEANUP */
 
 	DeleteAllObjects();
 	gEnteringName = false;
+	SDL_StopTextInput(gSDLWindow);
+	active = false;
+	return true;
 }
 
 

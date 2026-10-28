@@ -83,6 +83,7 @@ Boolean GetNewKeyState_SDL(unsigned short sdlScanCode);
 Boolean GetSkipScreenInput(void);
 Boolean IsCmdQPressed(void);
 void ResetInputState(void);
+void ClearInputStates(void);
 void UpdateKeyMap(void);
 
 Boolean FlushMouseButtonPress(void);

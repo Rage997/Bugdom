@@ -455,18 +455,18 @@ void DrawSplines(void)
 		Boolean flat = gRealLevel == 5 && FindLiquidY(points[halfway].x, points[halfway].z, &flatY);
 		flatY += 150;
 
-		glBegin(GL_LINE_STRIP);
+		Render_BeginLines(GL_LINE_STRIP);
 		for (int j = 0; j < spline->numPoints; j++)
 		{
 			float x = points[j].x;
 			float z = points[j].z;
 			float y = flat? flatY: GetTerrainHeightAtCoord(x, z, FLOOR) + 10;
-			glVertex3f(x, y + (j&1) * 5, z);
-			glVertex3f(x, y + (!(j&1)) * 5, z);
+			Render_LineVertex(x, y + (j&1) * 5, z);
+			Render_LineVertex(x, y + (!(j&1)) * 5, z);
 		}
-		glEnd();
+		Render_EndLines();
 
-		glBegin(GL_LINES);
+		Render_BeginLines(GL_LINES);
 		for (int nub = 0; nub < spline->numNubs; nub++)
 		{
 			float flagSize = nub == 0 ? 150 : 30;
@@ -476,8 +476,8 @@ void DrawSplines(void)
 			float z = nubs[nub].z * MAP2UNIT_VALUE;
 			float y1 = flat ? flatY : GetTerrainHeightAtCoord(x, z, FLOOR) + 17;
 			float y2 = y1 + poleSize;
-			glVertex3f(x, y1, z);
-			glVertex3f(x, y2, z);
+			Render_LineVertex(x, y1, z);
+			Render_LineVertex(x, y2, z);
 
 			if (nub < spline->numNubs - 1)
 			{
@@ -487,10 +487,10 @@ void DrawSplines(void)
 				float y3 = y2 - flagSize * 0.25f;
 				float y4 = y2 - flagSize * 0.5f;
 
-				glVertex3f(x, y2, z);
-				glVertex3f(x + flagDir.x * flagSize, y3, z + flagDir.z * flagSize);
-				glVertex3f(x + flagDir.x * flagSize, y3, z + flagDir.z * flagSize);
-				glVertex3f(x, y4, z);
+				Render_LineVertex(x, y2, z);
+				Render_LineVertex(x + flagDir.x * flagSize, y3, z + flagDir.z * flagSize);
+				Render_LineVertex(x + flagDir.x * flagSize, y3, z + flagDir.z * flagSize);
+				Render_LineVertex(x, y4, z);
 
 				if (nub == 0)
 				{
@@ -498,13 +498,13 @@ void DrawSplines(void)
 					{
 						float x2 = x + ((2 + baton) * 4) * flagDir.x;
 						float z2 = z + ((2 + baton) * 4) * flagDir.z;
-						glVertex3f(x2, y3-10, z2);
-						glVertex3f(x2, y3+10, z2);
+						Render_LineVertex(x2, y3-10, z2);
+						Render_LineVertex(x2, y3+10, z2);
 					}
 				}
 			}
 		}
-		glEnd();
+		Render_EndLines();
 	}
 }
 

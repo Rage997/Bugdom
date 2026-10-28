@@ -190,7 +190,7 @@ void DisposeLiquids(void)
 	{
 		if (gLiquidMeshPtrs[i] != nil)
 		{
-			Q3TriMeshData_Dispose(gLiquidMeshPtrs[i]);
+			Render_DisposeMesh(gLiquidMeshPtrs[i]);
 			gLiquidMeshPtrs[i] = nil;
 		}
 
@@ -599,6 +599,7 @@ TQ3Point3D		*p;
 			/* SUBMIT IT */
 			/*************/
 
+	RenderWeb_InvalidateMesh(tmd, kWebMeshAll);
 	Render_SubmitMesh(tmd, nil, &theNode->RenderModifiers, &theNode->Coord);
 }
 
@@ -738,6 +739,7 @@ TQ3TriMeshTriangleData	*t;
 			/* SUBMIT IT */
 			/*************/
 
+	RenderWeb_InvalidateMesh(tmd, kWebMeshAll);
 	Render_SubmitMesh(tmd, nil, &theNode->RenderModifiers, &theNode->Coord);
 }
 
@@ -1040,6 +1042,7 @@ TQ3TriMeshTriangleData	*t;
 			/* SUBMIT IT */
 			/*************/
 
+	RenderWeb_InvalidateMesh(tmd, kWebMeshAll);
 	Render_SubmitMesh(tmd, nil, &theNode->RenderModifiers, &theNode->Coord);
 }
 

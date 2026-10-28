@@ -11,7 +11,6 @@
 /****************************/
 
 #include "game.h"
-#include <SDL3/SDL_opengl.h>
 
 
 /****************************/
@@ -194,7 +193,7 @@ QD3DSetupOutputType	*data;
 
 	if (gPillarboxMesh)
 	{
-		Q3TriMeshData_Dispose(gPillarboxMesh);
+		Render_DisposeMesh(gPillarboxMesh);
 		gPillarboxMesh = nil;
 	}
 
@@ -213,6 +212,7 @@ QD3DSetupOutputType	*data;
 
 static void CreateLights(QD3DLightDefType *lightDefPtr)
 {
+#ifndef __EMSCRIPTEN__
 			/************************/
 			/* CREATE AMBIENT LIGHT */
 			/************************/
@@ -266,6 +266,9 @@ static void CreateLights(QD3DLightDefType *lightDefPtr)
 	{
 		glDisable(GL_LIGHT0 + i);
 	}
+#else
+	(void) lightDefPtr;
+#endif
 }
 
 
@@ -520,10 +523,18 @@ OSErr					err;
 
 /************** QD3D CALC FRAMES PER SECOND *****************/
 
+static uint64_t gPrevFrameTime;
+
+void QD3D_ResetFrameTimer(void)
+{
+	gPrevFrameTime = SDL_GetPerformanceCounter();
+	gFramesPerSecond = 60;
+	gFramesPerSecondFrac = 1.0f / 60.0f;
+}
+
 void QD3D_CalcFramesPerSecond(void)
 {
 	static uint64_t performanceFrequency = 0;
-	static uint64_t prevTime = 0;
 	uint64_t currTime;
 
 	if (performanceFrequency == 0)
@@ -531,9 +542,11 @@ void QD3D_CalcFramesPerSecond(void)
 		performanceFrequency = SDL_GetPerformanceFrequency();
 	}
 
+#ifndef __EMSCRIPTEN__
 	slow_down:
+#endif
 	currTime = SDL_GetPerformanceCounter();
-	uint64_t deltaTime = currTime - prevTime;
+	uint64_t deltaTime = gPrevFrameTime ? currTime - gPrevFrameTime : performanceFrequency / 60;
 
 	if (deltaTime <= 0)
 	{
@@ -543,6 +556,7 @@ void QD3D_CalcFramesPerSecond(void)
 	{
 		gFramesPerSecond = performanceFrequency / (float)(deltaTime);
 
+#ifndef __EMSCRIPTEN__
 		if (gFramesPerSecond > MAX_FPS)					// keep from cooking the GPU
 		{
 			if (gFramesPerSecond - MAX_FPS > 1000)		// try to sneak in some sleep if we have 1 ms to spare
@@ -551,6 +565,7 @@ void QD3D_CalcFramesPerSecond(void)
 			}
 			goto slow_down;
 		}
+#endif
 
 		if (gFramesPerSecond < MIN_FPS)					// (avoid divide by 0's later)
 		{
@@ -580,7 +595,7 @@ void QD3D_CalcFramesPerSecond(void)
 
 	gFramesPerSecondFrac = 1.0f / gFramesPerSecond;		// calc fractional for multiplication
 
-	prevTime = currTime;								// reset for next time interval
+	gPrevFrameTime = currTime;
 }
 
 #pragma mark -
@@ -598,10 +613,10 @@ void ShowNormal(TQ3Point3D *where, TQ3Vector3D *normal)
 
 void DrawNormal(void)
 {
-	glBegin(GL_LINES);
-	glVertex3f(gNormalWhere.x, gNormalWhere.y, gNormalWhere.z);
-	glVertex3f(gNormalWhere.x + gNormal.x * 400.0f, gNormalWhere.y + gNormal.y * 400.0f, gNormalWhere.z + gNormal.z * 400.0f);
-	glEnd();
+	Render_BeginLines(GL_LINES);
+	Render_LineVertex(gNormalWhere.x, gNormalWhere.y, gNormalWhere.z);
+	Render_LineVertex(gNormalWhere.x + gNormal.x * 400.0f, gNormalWhere.y + gNormal.y * 400.0f, gNormalWhere.z + gNormal.z * 400.0f);
+	Render_EndLines();
 }
 
 /************ LAY OUT TEXT IN DEBUG TEXT MESH *****************/
@@ -616,7 +631,7 @@ void QD3D_UpdateDebugTextMesh(const char* text)
 	{
 		if (gDebugTextMesh)
 		{
-			Q3TriMeshData_Dispose(gDebugTextMesh);
+			Render_DisposeMesh(gDebugTextMesh);
 			gDebugTextMesh = nil;
 		}
 		return;
@@ -722,6 +737,7 @@ void QD3D_DrawPillarbox(void)
 	}
 
 
+	RenderWeb_InvalidateMesh(gPillarboxMesh, kWebMeshGeometry);
 	Render_SetViewport(0, 0, gWindowWidth, gWindowHeight);
 	Render_Enter2D_NativeResolution();
 	Render_SubmitMesh(gPillarboxMesh, NULL, &kDefaultRenderMods_Pillarbox, &kQ3Point3D_Zero);

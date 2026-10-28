@@ -2,17 +2,19 @@
 // miscscreens.h
 //
 
-void DoPaused(void);
-void ShowLevelIntroScreen(void);
-void DoSettingsScreen(void);
-void DoAboutScreens(void);
-void DoLegalScreen(void);
-void DoPangeaLogo(void);
-void DoWinScreen(void);
-void DoLoseScreen(void);
-void DoModelDebug(void);
-void DoTitleScreen(void);
-bool DoLevelSelect(void);
+// Screen functions return false while active, true after cleanup.
+bool DoPaused(void);
+bool ShowLevelIntroScreen(void);
+bool DoSettingsScreen(void);
+bool DoAboutScreens(void);
+bool DoLegalScreen(void);
+bool DoPangeaLogo(void);
+bool DoWinScreen(void);
+bool DoLoseScreen(void);
+bool DoModelDebug(void);
+bool DoTitleScreen(void);
+// -1 while active, 0 on cancellation, 1 after selecting a level.
+int DoLevelSelect(void);
 
 
 
@@ -26,7 +28,7 @@ enum
 };
 
 void SetupUIStuff(int backgroundType);
-void CleanupUIStuff(void);
+bool CleanupUIStuff(void);
 void MakeSpiderButton(TQ3Point3D coord, const char* caption, int pickID);
 int UpdateHoveredPickID(void);
 void NukeObjectsInSlot(u_short objNodeSlotID);

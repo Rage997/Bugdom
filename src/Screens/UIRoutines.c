@@ -122,10 +122,11 @@ void SetupUIStuff(int backgroundType)
 	InitAnalogCursor();
 }
 
-void CleanupUIStuff()
+bool CleanupUIStuff(void)
 {
+	if (!GammaFadeOut(false))
+		return false;
 	ShutdownAnalogCursor();
-	GammaFadeOut(false);
 	DisposePickableObjects();
 	TextMesh_Shutdown();
 	DeleteAllObjects();
@@ -137,6 +138,7 @@ void CleanupUIStuff()
 	DisposeSoundBank(SOUNDBANK_MAIN);
 	GameScreenToBlack();
 	Pomme_FlushPtrTracking(true);
+	return true;
 }
 
 static void MoveSpider(ObjNode* objNode)

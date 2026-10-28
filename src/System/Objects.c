@@ -592,7 +592,7 @@ void DeleteObject(ObjNode	*theNode)
 		// If the node has ownership of this mesh's memory, dispose of it
 		if (theNode->OwnsMeshMemory[i])
 		{
-			Q3TriMeshData_Dispose(theNode->MeshList[i]);
+			Render_DisposeMesh(theNode->MeshList[i]);
 		}
 
 		theNode->MeshList[i] = nil;
@@ -918,35 +918,35 @@ float			left,right,top,bottom,front,back;
 
 			/* DRAW TOP */
 
-		glBegin(GL_LINE_STRIP);
-		glVertex3f(left,		top,		back);
-		glVertex3f(left,		top,		front);
-		glVertex3f(right,		top,		front);
-		glVertex3f(right,		top,		back);
-		glVertex3f(left,		top,		back);
-		glEnd();
+		Render_BeginLines(GL_LINE_STRIP);
+		Render_LineVertex(left, top, back);
+		Render_LineVertex(left, top, front);
+		Render_LineVertex(right, top, front);
+		Render_LineVertex(right, top, back);
+		Render_LineVertex(left, top, back);
+		Render_EndLines();
 
 			/* DRAW BOTTOM */
 
-		glBegin(GL_LINE_STRIP);
-		glVertex3f(left,		bottom,		back);
-		glVertex3f(left,		bottom,		front);
-		glVertex3f(right,		bottom,		front);
-		glVertex3f(right,		bottom,		back);
-		glVertex3f(left,		bottom,		back);
-		glEnd();
+		Render_BeginLines(GL_LINE_STRIP);
+		Render_LineVertex(left, bottom, back);
+		Render_LineVertex(left, bottom, front);
+		Render_LineVertex(right, bottom, front);
+		Render_LineVertex(right, bottom, back);
+		Render_LineVertex(left, bottom, back);
+		Render_EndLines();
 
 			/* DRAW LEFT & RIGHT */
 
-		glBegin(GL_LINES);
-		glVertex3f(left,		top,		back);
-		glVertex3f(left,		bottom,		back);
-		glVertex3f(left,		top,		front);
-		glVertex3f(left,		bottom,		front);
-		glVertex3f(right,		top,		back);
-		glVertex3f(right,		bottom,		back);
-		glVertex3f(right,		top,		front);
-		glVertex3f(right,		bottom,		front);
-		glEnd();
+		Render_BeginLines(GL_LINES);
+		Render_LineVertex(left, top, back);
+		Render_LineVertex(left, bottom, back);
+		Render_LineVertex(left, top, front);
+		Render_LineVertex(left, bottom, front);
+		Render_LineVertex(right, top, back);
+		Render_LineVertex(right, bottom, back);
+		Render_LineVertex(right, top, front);
+		Render_LineVertex(right, bottom, front);
+		Render_EndLines();
 	}
 }

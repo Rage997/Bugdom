@@ -52,29 +52,35 @@ static	ObjNode *gLadyBug;
 
 /********************** DO TITLE SCREEN *************************/
 
-void DoTitleScreen(void)
+bool DoTitleScreen(void)
 {
-			/*********/
-			/* SETUP */
-			/*********/
-			
-	PlaySong(SONG_MENU,true);
-
-	SetupTitleScreen();
-	QD3D_CalcFramesPerSecond();
-	QD3D_CalcFramesPerSecond();
-	
-	
-	if (TitleWaitAndDraw(14))
-		goto bail;
-	MakeFadeEvent(false);
-	TitleWaitAndDraw(1.3);
-	
-	
-			/* CLEANUP */
-
-bail: 
-	GammaFadeOut(false);
+	static int phase;
+	if (phase == 0)
+	{
+		PlaySong(SONG_MENU, true);
+		SetupTitleScreen();
+		QD3D_ResetFrameTimer();
+		phase = 1;
+		return false;
+	}
+	if (phase == 1)
+	{
+		if (!TitleWaitAndDraw(14)) return false;
+		if (GetSkipScreenInput())
+			phase = 3;
+		else
+		{
+			MakeFadeEvent(false);
+			phase = 2;
+		}
+		return false;
+	}
+	if (phase == 2)
+	{
+		if (!TitleWaitAndDraw(1.3f)) return false;
+		phase = 3;
+	}
+	if (!GammaFadeOut(false)) return false;
 	GameScreenToBlack();
 	DeleteAllObjects();
 	DeleteAllParticleGroups();
@@ -83,6 +89,8 @@ bail:
 	QD3D_DisposeShards();
 	QD3D_DisposeWindowSetup(&gGameViewInfoPtr);		
 	Pomme_FlushPtrTracking(true);
+	phase = 0;
+	return true;
 }
 
 
@@ -477,7 +485,7 @@ ObjNode	*shadow;
 
 static Boolean TitleWaitAndDraw(float duration)
 {
-	do
+	static float elapsed;
 	{
 		UpdateInput();
 		MoveObjects();
@@ -485,16 +493,12 @@ static Boolean TitleWaitAndDraw(float duration)
 		MoveParticleGroups();
 		QD3D_MoveShards();
 		QD3D_DrawScene(gGameViewInfoPtr,TitleDrawStuff);
-		QD3D_CalcFramesPerSecond();				
 		DoSDLMaintenance();
-		duration -= gFramesPerSecondFrac;
-		
-		if (GetSkipScreenInput())
-			return(true);		
-		
-	}while(duration > 0.0f);
-
-	return(false);
+		elapsed += gFramesPerSecondFrac;
+		if (!GetSkipScreenInput() && elapsed < duration) return false;
+	}
+	elapsed = 0;
+	return true;
 }
 
 /***************** TITLE DRAW STUFF ******************/

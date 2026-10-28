@@ -41,7 +41,7 @@ static void BuildSuperTileLOD(SuperTileMemoryType *superTilePtr, short lod);
 #define	OUTER_SIZE		0.6f		// size of border out of add window for delete window (can be float)
 
 #define TILE_TEXTURE_INTERNAL_FORMAT	GL_RGB
-#define TILE_TEXTURE_FORMAT				GL_BGRA_EXT
+#define TILE_TEXTURE_FORMAT				GL_BGRA
 #define TILE_TEXTURE_TYPE				GL_UNSIGNED_SHORT_1_5_5_5_REV
 
 
@@ -538,7 +538,7 @@ int		numLayers;
 
 				/* NUKE TRIMESH DATA */
 
-			Q3TriMeshData_Dispose(gSuperTileMemoryList[i].triMeshDataPtrs[layer]);
+			Render_DisposeMesh(gSuperTileMemoryList[i].triMeshDataPtrs[layer]);
 			gSuperTileMemoryList[i].triMeshDataPtrs[layer] = nil;
 		}
 	}
@@ -680,6 +680,7 @@ static TQ3Vector3D	faceNormal[NUM_TRIS_IN_SUPERTILE];
 					/*******************/
 					
 		triMeshData = gSuperTileMemoryList[superTileNum].triMeshDataPtrs[layer];	// get ptr to triMesh data
+		RenderWeb_InvalidateMesh(triMeshData, kWebMeshAll);
 		pointList = triMeshData->points;									// get ptr to point/vertex list
 		triangleList = triMeshData->triangles;								// get ptr to triangle index list
 		vertexColorList = triMeshData->vertexColors;						// get ptr to vertex color
@@ -984,6 +985,7 @@ static TQ3Vector3D	faceNormal[NUM_TRIS_IN_SUPERTILE];
 
 			Render_UpdateTexture(
 					superTilePtr->glTextureName[layer][0],
+					TILE_TEXTURE_INTERNAL_FORMAT,
 					0,
 					0,
 					gTextureSizePerLOD[0],
@@ -1068,6 +1070,7 @@ static void BuildSuperTileLOD(SuperTileMemoryType *superTilePtr, short lod)
 
 		Render_UpdateTexture(
 				superTilePtr->glTextureName[j][lod],
+				TILE_TEXTURE_INTERNAL_FORMAT,
 				0,
 				0,
 				gTextureSizePerLOD[lod],

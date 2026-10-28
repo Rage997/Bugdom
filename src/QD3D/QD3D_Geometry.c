@@ -175,7 +175,7 @@ void QD3D_DisposeShards(void)
 		ShardType* shard = &gShards[i];
 		if (shard->mesh)
 		{
-			Q3TriMeshData_Dispose(shard->mesh);
+			Render_DisposeMesh(shard->mesh);
 			shard->mesh = NULL;
 		}
 	}
@@ -349,6 +349,7 @@ static void ExplodeTriMesh(
 			}
 		}
 
+		RenderWeb_InvalidateMesh(sMesh, kWebMeshAll);
 			/*********************/
 			/* SET PHYSICS STUFF */
 			/*********************/
@@ -502,6 +503,7 @@ void QD3D_DrawShards(const QD3DSetupOutputType *setupInfo)
 void QD3D_ScrollUVs(TQ3TriMeshData* mesh, float du, float dv)
 {
 	GAME_ASSERT(mesh->vertexUVs);
+	RenderWeb_InvalidateMesh(mesh, kWebMeshAttributes);
 	for (int j = 0; j < mesh->numPoints; j++)
 	{
 		mesh->vertexUVs[j].u += du;

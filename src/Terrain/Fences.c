@@ -150,7 +150,7 @@ void DisposeFences(void)
 	{
 		if (gFenceTriMeshDataPtrs[f] != nil)
 		{
-			Q3TriMeshData_Dispose(gFenceTriMeshDataPtrs[f]);
+			Render_DisposeMesh(gFenceTriMeshDataPtrs[f]);
 			gFenceTriMeshDataPtrs[f] = nil;
 		}
 	}
@@ -718,6 +718,7 @@ TQ3TriMeshData			*tmd;
 		/* SUBMIT GEOMETRY */
 		/*******************/
 
+	RenderWeb_InvalidateMesh(tmd, kWebMeshGeometry | kWebMeshAttributes);
 	Render_SubmitMesh(tmd, nil, &gFenceRenderMods[f], nil);
 }
 

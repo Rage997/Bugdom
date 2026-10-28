@@ -1,7 +1,17 @@
 #pragma once
 
 #include <QD3D.h>
+#ifdef __EMSCRIPTEN__
+#include <GLES3/gl3.h>
+// Legacy asset pixel layouts, converted to RGBA8 before WebGL uploads.
+#define GL_BGRA 0x80E1
+#define GL_BGR 0x80E0
+#define GL_UNSIGNED_SHORT_1_5_5_5_REV 0x8366
+#define GL_UNSIGNED_INT_8_8_8_8 0x8035
+#define GL_UNSIGNED_INT_8_8_8_8_REV 0x8367
+#else
 #include <SDL3/SDL_opengl.h>
+#endif
 
 #if _DEBUG
 #define CHECK_GL_ERROR()												\
@@ -93,6 +103,12 @@ void Render_InitState(const TQ3ColorRGBA* clearColor);
 
 void Render_EndScene(void);
 
+void Render_DisposeMesh(TQ3TriMeshData* mesh);
+void Render_DisposeMetaFile(TQ3MetaFile* file);
+void Render_BeginLines(GLenum mode);
+void Render_LineVertex(float x, float y, float z);
+void Render_EndLines(void);
+
 void Render_EnableFog(
 		float camHither,
 		float camYon,
@@ -120,8 +136,10 @@ GLuint Render_LoadTexture(
 		RendererTextureFlags flags
 );
 
+// internalFormat must match the format passed to Render_LoadTexture.
 void Render_UpdateTexture(
 		GLuint textureName,
+		GLenum internalFormat,
 		int x,
 		int y,
 		int width,

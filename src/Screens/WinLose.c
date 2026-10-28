@@ -60,9 +60,11 @@ static ObjNode	*gThrone;
 
 /********************** DO WIN SCREEN *************************/
 
-void DoWinScreen(void)
+bool DoWinScreen(void)
 {
-
+	static int phase;
+	if (phase == 0)
+	{
 			/*********/
 			/* SETUP */
 			/*********/
@@ -71,16 +73,18 @@ void DoWinScreen(void)
 	SetupWinScreen();
 	PlaySong(SONG_WIN,false);
 
-	QD3D_CalcFramesPerSecond();
-	QD3D_CalcFramesPerSecond();
-
-		/**************/
-		/* PROCESS IT */
-		/**************/
-				
-	WaitAndDraw(29, false);	
-	MakeFadeEvent(false);
-	WaitAndDraw(1, false);	
+		phase = 1;
+		QD3D_ResetFrameTimer();
+		return false;
+	}
+	if (phase == 1)
+	{
+		if (!WaitAndDraw(29, false)) return false;
+		MakeFadeEvent(false);
+		phase = 2;
+		return false;
+	}
+	if (!WaitAndDraw(1, false)) return false;
 	
 			/* CLEANUP */
 
@@ -89,6 +93,8 @@ void DoWinScreen(void)
 	DeleteAll3DMFGroups();
 	QD3D_DisposeWindowSetup(&gGameViewInfoPtr);		
 	Pomme_FlushPtrTracking(true);
+	phase = 0;
+	return true;
 }
 
 
@@ -281,9 +287,11 @@ static const TQ3Point2D po[4] =
 
 /********************** DO LOSE SCREEN *************************/
 
-void DoLoseScreen(void)
+bool DoLoseScreen(void)
 {
-
+	static int phase;
+	if (phase == 0)
+	{
 			/*********/
 			/* SETUP */
 			/*********/
@@ -293,16 +301,18 @@ void DoLoseScreen(void)
 	PlaySong(SONG_LOSE,false);
 
 
-	QD3D_CalcFramesPerSecond();
-	QD3D_CalcFramesPerSecond();
-
-		/**************/
-		/* PROCESS IT */
-		/**************/
-				
-	WaitAndDraw(29, true);	
-	MakeFadeEvent(false);
-	WaitAndDraw(1, true);	
+		phase = 1;
+		QD3D_ResetFrameTimer();
+		return false;
+	}
+	if (phase == 1)
+	{
+		if (!WaitAndDraw(29, true)) return false;
+		MakeFadeEvent(false);
+		phase = 2;
+		return false;
+	}
+	if (!WaitAndDraw(1, true)) return false;
 				
 	
 			/* CLEANUP */
@@ -313,6 +323,8 @@ void DoLoseScreen(void)
 	DeleteAll3DMFGroups();
 	QD3D_DisposeWindowSetup(&gGameViewInfoPtr);		
 	Pomme_FlushPtrTracking(true);
+	phase = 0;
+	return true;
 }
 
 
@@ -523,9 +535,9 @@ static const TQ3Point2D po[4] =
 
 static Boolean WaitAndDraw(float duration, Boolean fire)
 {
-float	fps;
-
-	do
+	static float elapsed;
+	float fps = gFramesPerSecondFrac;
+	bool done;
 	{
 		UpdateInput();
 		MoveObjects();
@@ -533,13 +545,10 @@ float	fps;
 		MoveParticleGroups();
 		QD3D_MoveShards();
 		QD3D_DrawScene(gGameViewInfoPtr,WinLoseDrawStuff);
-		QD3D_CalcFramesPerSecond();	
 		DoSDLMaintenance();
 		fps = gFramesPerSecondFrac;			
-		duration -= fps;
-		
-		if (GetSkipScreenInput())
-			return(true);		
+		elapsed += fps;
+		done = GetSkipScreenInput() || elapsed >= duration;
 		
 		if (fire)
 		{
@@ -555,9 +564,9 @@ float	fps;
 			QD3D_ScrollUVs(gThrone->MeshList[WIN_THRONE_WATER_SUBMESH], fps*.1f, -fps*.05f);
 		}
 		
-	}while(duration > 0.0f);
-
-	return(false);
+	}
+	if (done) elapsed = 0;
+	return done;
 }
 
 /***************** INTRO WINLOSE STUFF ******************/

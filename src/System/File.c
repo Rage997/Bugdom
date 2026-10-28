@@ -11,6 +11,9 @@
 /***************/
 
 #include "game.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 
 /****************************/
@@ -574,6 +577,9 @@ long				count;
 	GAME_ASSERT(count == sizeof(PrefsType));
 
 	FSClose(refNum);
+#ifdef __EMSCRIPTEN__
+	EM_ASM({ Module['persist'](); });
+#endif
 }
 
 #pragma mark -
@@ -657,6 +663,9 @@ SDL_Time		timestampNanoseconds = 0;
 		DoAlert("Error writing save file");
 		return;
 	}
+#ifdef __EMSCRIPTEN__
+	EM_ASM({ Module['persist'](); });
+#endif
 }
 
 
@@ -734,7 +743,11 @@ OSErr DeleteSavedGame(int slot)
 {
 
 	FSSpec spec = MakeSaveGameFSSpec(slot);
-	return FSpDelete(&spec);
+	OSErr err = FSpDelete(&spec);
+#ifdef __EMSCRIPTEN__
+	if (err == noErr) EM_ASM({ if (Module.persist) Module.persist(); });
+#endif
+	return err;
 }
 
 

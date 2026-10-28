@@ -10,7 +10,58 @@ cd Bugdom
 python3 build.py
 ```
 
-If you want to build the game **manually** instead, the rest of this document describes how to do just that on each of the big 3 desktop operating systems.
+For native builds, `build.py` remains the recommended entry point. Browser builds use the Emscripten instructions below.
+
+## How to build for the web
+
+Requires CMake 3.24+, Git, Python 3, and [Emscripten 6.0.13](https://emscripten.org/docs/getting_started/downloads.html). Run from the repository root:
+
+```sh
+git submodule sync
+git submodule update --init --recursive
+source /path/to/emsdk/emsdk_env.sh
+emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
+cmake --build build-web --parallel
+python3 -m http.server 8000 --directory build-web
+```
+
+Open **http://localhost:8000/Bugdom.html**. Do not open the HTML with a `file://` URL.
+
+The game starts after loading. CMake fetches SDL 3.2.28; the pinned
+[Pomme fork](https://github.com/Rage997/Pomme) reuses that SDL target.
+To use a local SDL checkout, add `-DFETCHCONTENT_SOURCE_DIR_SDL3=/path/to/SDL`.
+Keep web and native builds separate.
+
+The launcher is `packaging/web.html`; artwork is in `packaging/web-assets/`.
+Blender is not needed to build.
+
+### Static deployment
+
+Upload these files together to a static HTTPS host:
+
+- `Bugdom.html`, `Bugdom.js`, `Bugdom.wasm`, `Bugdom.data`, `Bugdom.png`
+- The complete `web-assets/` directory
+- Original credits and [license](LICENSE.md)
+
+You may rename `Bugdom.html` to `index.html`. Serve `.wasm` as `application/wasm`
+and `.data` as `application/octet-stream`. No backend or cross-origin isolation is needed.
+
+The asset bundle is about **65 MiB** uncompressed. Check the host's file-size limit
+and enable compression. The **Web Build** workflow uploads a `Bugdom-web` artifact;
+it does not publish a site.
+
+Keep the credits and CC BY-NC-SA 4.0 license. Commercial use needs separate permission.
+
+### Browser behavior and verification
+
+- Requires WebAssembly, WebGL2, and a keyboard/mouse. No touch controls.
+- **Arrows/WASD** move, **X** jumps, **C** kicks/boosts, **Space** rolls, **Tab** releases the buddy bug, and **Escape** pauses.
+- Click to capture the mouse and enable sound. Losing capture or hiding the tab pauses the game.
+- Saves, settings, and scores stay in this browser. Clearing site data deletes them; unavailable storage allows session-only play.
+- Graphics context loss requires a reload.
+
+Before publishing, check gameplay, pause/resume, fullscreen, and save/load after a reload.
+
 
 ## How to build the game manually on macOS
 

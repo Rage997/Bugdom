@@ -32,18 +32,19 @@ ObjNode* gLevelScreenshotNode = NULL;
 
 /********************** DO LEVEL SELECT SCREEN *************************/
 
-bool DoLevelSelect(void)
+int DoLevelSelect(void)
 {
-	bool proceed = false;
-
+	static int phase;
+	static bool proceed;
+	static GLuint levelScreenshots[NUM_LEVELS];
+	if (phase == 0)
+	{
+		proceed = false;
 	/*********/
 	/* SETUP */
 	/*********/
 
 	SetupUIStuff(kUIBackground_White);
-	QD3D_CalcFramesPerSecond();
-
-	GLuint levelScreenshots[NUM_LEVELS];
 	for (int i = 0; i < NUM_LEVELS; i++)
 	{
 		levelScreenshots[i] = QD3D_LoadTextureFile(
@@ -63,13 +64,16 @@ bool DoLevelSelect(void)
 
 	FlushMouseButtonPress();
 
-	while (1)
+		phase = 1;
+		QD3D_ResetFrameTimer();
+		return -1;
+	}
+	if (phase == 1)
 	{
 		UpdateInput();
 		MoveObjects();
 		QD3D_MoveShards();
 		QD3D_DrawScene(gGameViewInfoPtr, LevelSelectDrawStuff);
-		QD3D_CalcFramesPerSecond();
 		DoSDLMaintenance();
 
 		bool button = IsAnalogCursorClicked();
@@ -77,7 +81,7 @@ bool DoLevelSelect(void)
 		if (!button && GetSkipScreenInput())
 		{
 			proceed = false;
-			break;
+			phase = 2;
 		}
 
 		UpdateHoveredPickID();
@@ -90,17 +94,18 @@ bool DoLevelSelect(void)
 			{
 				gRealLevel = gHoveredPick;
 				proceed = true;
-				break;
+				phase = 2;
 			}
 		}
 	}
 
 	/* CLEANUP */
 
-	CleanupUIStuff();
+	if (phase == 1 || !CleanupUIStuff()) return -1;
 
 	glDeleteTextures(NUM_LEVELS, levelScreenshots);
 
+	phase = 0;
 	return proceed;
 }
 

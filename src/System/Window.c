@@ -36,16 +36,11 @@ void InitWindowStuff(void)
 
 	SetFullscreenMode(true);
 
-		/* SHOW A COUPLE BLACK FRAMES BEFORE WE BEGIN */
-
+	// The outer frame loop presents startup; do not block the browser on swaps.
 	QD3DSetupInputType viewDef;
 	QD3D_NewViewDef(&viewDef);
 	QD3D_SetupWindow(&viewDef, &gGameViewInfoPtr);
-	for (int i = 0; i < 45; i++)
-	{
-		QD3D_DrawScene(gGameViewInfoPtr, nil);
-		DoSDLMaintenance();
-	}
+	QD3D_DrawScene(gGameViewInfoPtr, nil);
 	QD3D_DisposeWindowSetup(&gGameViewInfoPtr);
 	Pomme_FlushPtrTracking(true);
 }
@@ -53,50 +48,42 @@ void InitWindowStuff(void)
 
 /**************** GAMMA FADE OUT *************************/
 
-void GammaFadeOut(Boolean fadeSound)
+bool GammaFadeOut(Boolean fadeSound)
 {
-	float duration = .3f;
+	static bool active = false;
+	static float elapsed;
+	static float startGamma;
+	const float duration = .3f;
 
-#if _DEBUG
-	duration = .05f;
-#endif
-
-	Uint32 startTicks = SDL_GetTicks();
-//	gGammaFadeFactor = 1.0f;
-
-	while (gGammaFadeFactor > 0)
+	if (!active)
 	{
-		Uint32 ticks = SDL_GetTicks();
-		gGammaFadeFactor = 1.0f - ((ticks - startTicks) / 1000.0f / duration);
-		if (gGammaFadeFactor < 0.0f)
-			gGammaFadeFactor = 0.0f;
-
-		UpdateInput();
-
-		if (gSuperTileMemoryListExists)
-			QD3D_DrawScene(gGameViewInfoPtr, DrawTerrain);
-		else
-			QD3D_DrawScene(gGameViewInfoPtr, DrawObjects);
-
-		if (fadeSound)
-		{
-			FadeGlobalVolume(gGammaFadeFactor);
-		}
-
-		QD3D_CalcFramesPerSecond();
-		DoSDLMaintenance();
+		active = true;
+		elapsed = 0;
+		startGamma = gGammaFadeFactor;
 	}
+	elapsed += gFramesPerSecondFrac;
+	gGammaFadeFactor = startGamma * fmaxf(0, 1 - elapsed / duration);
 
+	UpdateInput();
+	if (gGameViewInfoPtr)
+		QD3D_DrawScene(gGameViewInfoPtr, gSuperTileMemoryListExists ? DrawTerrain : DrawObjects);
+	if (fadeSound)
+		FadeGlobalVolume(gGammaFadeFactor);
+	DoSDLMaintenance();
+
+	if (elapsed < duration && startGamma > 0)
+		return false;
+
+	active = false;
 	gGammaFadeFactor = 1;
-
 	if (fadeSound)
 	{
 		StopAllEffectChannels();
 		KillSong();
 		FadeGlobalVolume(1);
 	}
-
 	FlushMouseButtonPress();
+	return true;
 }
 
 /********************** GAMMA ON *********************/
@@ -278,6 +265,12 @@ void MoveToPreferredDisplay(void)
 
 void SetFullscreenMode(bool enforceDisplayPref)
 {
+#ifdef __EMSCRIPTEN__
+	// Only the page's gesture handler may request browser fullscreen.
+	(void) enforceDisplayPref;
+	gGamePrefs.fullscreen = (SDL_GetWindowFlags(gSDLWindow) & SDL_WINDOW_FULLSCREEN) != 0;
+	SDL_GL_SetSwapInterval(1);
+#else
 	if (!gGamePrefs.fullscreen)
 	{
 		SDL_SetWindowFullscreen(gSDLWindow, 0);
@@ -310,4 +303,5 @@ void SetFullscreenMode(bool enforceDisplayPref)
 	}
 
 	SDL_GL_SetSwapInterval(gGamePrefs.vsync);
+#endif
 }

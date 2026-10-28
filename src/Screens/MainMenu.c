@@ -18,7 +18,7 @@
 
 static void MoveMenuCamera(void);
 static void SetupMainMenu(void);
-static void WalkSpiderToIcon(void);
+static bool WalkSpiderToIcon(void);
 
 
 /****************************/
@@ -70,160 +70,99 @@ static int32_t		gMenuSelection;
 // OUTPUT: true == loop to title
 //
 
-Boolean DoMainMenu(void)
+int DoMainMenu(void)
 {
-int			mouseX = 0;
-int			mouseY = 0;
-float		timer = 0;
-bool		loop = false;
-
-start_again:
-
-	timer = 0;
-	PlaySong(SONG_MENU,true);
-
-			/*********/
-			/* SETUP */
-			/*********/
-	
-	gRestoringSavedGame = false;
-	SetupMainMenu();
-			
-				/****************/
-				/* PROCESS LOOP */
-				/****************/
-			
-	gDisableAnimSounds = true;
-	
-	QD3D_CalcFramesPerSecond();
-	QD3D_CalcFramesPerSecond();
-
-	InitAnalogCursor();
-
-	while(true)	
+	static int phase;
+	static float timer;
+	if (phase == 0)
 	{
+		timer = 0;
+		PlaySong(SONG_MENU, true);
+		gRestoringSavedGame = false;
+		SetupMainMenu();
+		gDisableAnimSounds = true;
+		InitAnalogCursor();
+		QD3D_ResetFrameTimer();
+		phase = 1;
+		return -1;
+	}
+	if (phase == 1)
+	{
+		int mouseX, mouseY;
+		UpdateInput();
 		MoveObjects();
 		MoveMenuCamera();
-		QD3D_DrawScene(gGameViewInfoPtr,DrawObjects);
-
-			/* UPDATE CURSOR */
-
+		QD3D_DrawScene(gGameViewInfoPtr, DrawObjects);
 		bool didMove = MoveAnalogCursor(&mouseX, &mouseY);
-
-				/* SEE IF USER CLICKED SOMETHING */
-
-		if (IsAnalogCursorClicked())
-		{
-			if (PickObject(mouseX, mouseY, &gMenuSelection))
-				break;
-		}
-		
-		QD3D_CalcFramesPerSecond();
 		DoSDLMaintenance();
-		UpdateInput();									// keys get us out
-		
-				/* UPDATE TIMER */
-
-		if (didMove)									// reset timer if mouse moved
-			timer = 0;
+		if (IsAnalogCursorClicked() && PickObject(mouseX, mouseY, &gMenuSelection))
+		{
+			ShutdownAnalogCursor();
+			phase = 2;
+		}
 		else
 		{
-			timer += gFramesPerSecondFrac;
-			if (timer > 20.0f)
+			timer = didMove ? 0 : timer + gFramesPerSecondFrac;
+			if (timer > 20)
 			{
 				gMenuSelection = kMenuChoice_TimedOut;
-				loop = true;
-				goto getout;
+				phase = 3;
 			}
 		}
+		return -1;
 	}
-	
-		/***********************/
-		/* WALK SPIDER TO ICON */
-		/***********************/
-
-	ShutdownAnalogCursor();
-	WalkSpiderToIcon();
-	
-	
-		/********************/
-		/* HANDLE SELECTION */
-		/********************/
-
-	if (gMenuSelection == kMenuChoice_Quit)
+	if (phase == 2)
 	{
-		CleanQuit();
-		return false;
+		if (!WalkSpiderToIcon()) return -1;
+		if (gMenuSelection == kMenuChoice_Quit) CleanQuit();
+		phase = 3;
+		return -1;
 	}
-	
-			/***********/
-			/* CLEANUP */
-			/***********/
-
-getout:
-	ShutdownAnalogCursor();
-	gCurrentSaveSlot = -1;
-
+	if (phase == 3)
+	{
+		bool fadeAudio = gMenuSelection == kMenuChoice_Play || gMenuSelection == kMenuChoice_Scores;
+		if (!GammaFadeOut(fadeAudio)) return -1;
+		gCurrentSaveSlot = -1;
+		ShutdownAnalogCursor();
+		DeleteAllObjects();
+		FreeAllSkeletonFiles(-1);
+		DeleteAll3DMFGroups();
+		QD3D_DisposeWindowSetup(&gGameViewInfoPtr);
+		GameScreenToBlack();
+		Pomme_FlushPtrTracking(true);
+		gDisableAnimSounds = false;
+		phase = 4;
+		return -1;
+	}
 	switch (gMenuSelection)
 	{
 		case kMenuChoice_About:
-		case kMenuChoice_Restore:
+			if (DoAboutScreens()) phase = 0;
+			return -1;
+		case kMenuChoice_Scores:
+			if (ShowHighScoresScreen(0)) phase = 0;
+			return -1;
 		case kMenuChoice_Settings:
-		case kMenuChoice_TimedOut:
-			GammaFadeOut(false);			// fade screen to black but don't fade out audio
-			break;
-
-		default:
-			GammaFadeOut(true);				// music will change, so fade out audio as well
-			break;
-	}
-
-	ShutdownAnalogCursor();
-	DeleteAllObjects();
-	FreeAllSkeletonFiles(-1);
-	DeleteAll3DMFGroups();
-	QD3D_DisposeWindowSetup(&gGameViewInfoPtr);		
-	GameScreenToBlack();
-	Pomme_FlushPtrTracking(true);
-	gDisableAnimSounds = false;
-
-			/* SEE WHAT TO DO */
-			
-	switch(gMenuSelection)
-	{
-		case	kMenuChoice_About:
-				DoAboutScreens();
-				goto start_again;
-				
-		case	kMenuChoice_Scores:
-				ShowHighScoresScreen(0);
-				goto start_again;
-
-		case	kMenuChoice_Restore:
+			if (DoSettingsScreen()) phase = 0;
+			return -1;
+		case kMenuChoice_Restore:
 		{
-				int pickedFile = DoFileSelectScreen(FILE_SELECT_SCREEN_TYPE_LOAD);
-				if (pickedFile < 0)
-				{
-					goto start_again;
-				}
-				OSErr err = LoadSavedGame(pickedFile);
-				if (err != noErr)
-				{
-					DoAlert("Couldn't restore game: error %d", err);
-					goto start_again;
-				}
-				break;
+			int picked = DoFileSelectScreen(FILE_SELECT_SCREEN_TYPE_LOAD);
+			if (picked == -2) return -1;
+			phase = 0;
+			if (picked < 0) return -1;
+			OSErr err = LoadSavedGame(picked);
+			if (err != noErr)
+			{
+				DoAlert("Couldn't restore game: error %d", err);
+				return -1;
+			}
+			return 0;
 		}
-
-		case	kMenuChoice_Settings:
-				DoSettingsScreen();
-				goto start_again;
-				break;
+		default:
+			phase = 0;
+			return gMenuSelection == kMenuChoice_TimedOut ? 1 : 0;
 	}
-
-	GameScreenToBlack();
-
-	return(loop);
 }
 
 
@@ -418,19 +357,20 @@ float		d,fps = gFramesPerSecondFrac;
 
 /********** WALK SPIDER TO ICON *************/
 
-static void WalkSpiderToIcon(void)
+static bool WalkSpiderToIcon(void)
 {
-Boolean	b = FlushMouseButtonPress() || GetNewKeyState(kKey_UI_PadConfirm);
-
-
-	MorphToSkeletonAnim(gSpider->Skeleton, 2, 6);
-
-	while(true)	
+	static bool active, b;
+	if (!active)
+	{
+		active = true;
+		b = FlushMouseButtonPress() || GetNewKeyState(kKey_UI_PadConfirm);
+		MorphToSkeletonAnim(gSpider->Skeleton, 2, 6);
+	}
 	{		
 		if (FlushMouseButtonPress() || GetNewKeyState(kKey_UI_PadConfirm))			// see if user wants to hurry up
 		{
 			if (!b)
-				break;
+				goto complete;
 		}
 		else
 			b = false;
@@ -440,7 +380,7 @@ Boolean	b = FlushMouseButtonPress() || GetNewKeyState(kKey_UI_PadConfirm);
 		
 		if (CalcDistance(gSpider->Coord.x, gSpider->Coord.y,
 						 gMenuIcons[gMenuSelection]->Coord.x, gMenuIcons[gMenuSelection]->Coord.y) < 20.0f)
-			break;
+			goto complete;
 
 		
 		/* MOVE SPIDER */
@@ -457,12 +397,15 @@ Boolean	b = FlushMouseButtonPress() || GetNewKeyState(kKey_UI_PadConfirm);
 		MoveObjects();
 		MoveMenuCamera();
 		QD3D_DrawScene(gGameViewInfoPtr,DrawObjects);		
-		QD3D_CalcFramesPerSecond();
 		DoSDLMaintenance();
 		UpdateInput();									// keys get us out
 	}
 
+	return false;
+complete:
 	MorphToSkeletonAnim(gSpider->Skeleton, 0, 4);
+	active = false;
+	return true;
 }
 
 

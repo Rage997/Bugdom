@@ -18,7 +18,6 @@
 
 static void SetupLevelIntroScreen(void);
 static void DropLevelLetters(void);
-static Boolean WaitAndDraw(float duration);
 static void MoveDroppingLetter(ObjNode *theNode);
 static void MoveIntroCamera(void);
 
@@ -101,13 +100,20 @@ static TQ3Point3D	gCameraFrom = {0, 100, 900 };
 static Byte	gIntroCamMode;
 
 static ObjNode *gLetterObj[10];
+static float gIntroElapsed;
+static int gIntroStep;
 
 
 /********************** SHOW LEVEL INTRO SCREEN *************************/
 
-void ShowLevelIntroScreen(void)
+bool ShowLevelIntroScreen(void)
 {
-
+	static int phase;
+	static const float durations[NUM_LEVELS] = {12, 10, 8.5f, 5, 10, 15, 8.5f, 10, 8, 9};
+	if (phase == 0)
+	{
+		gIntroElapsed = 0;
+		gIntroStep = 0;
 			/* START AUDIO */
  		 				
  	switch(gLevelType)
@@ -143,8 +149,6 @@ void ShowLevelIntroScreen(void)
 			/*********/
 			
 	SetupLevelIntroScreen();
-	QD3D_CalcFramesPerSecond();
-	QD3D_CalcFramesPerSecond();
 
 		/**************/
 		/* PROCESS IT */
@@ -190,10 +194,34 @@ void ShowLevelIntroScreen(void)
 		default:		
 				DropLevelLetters();
 	}
-	
-			/* CLEANUP */
+		phase = 1;
+		QD3D_ResetFrameTimer();
+		return false;
+	}
 
-	GammaFadeOut(false);
+	if (phase == 1)
+	{
+		UpdateInput();
+		gIntroElapsed += gFramesPerSecondFrac;
+		if (gRealLevel == LEVEL_NUM_POND)
+			DoPond1Intro();
+		else if (gRealLevel == LEVEL_NUM_BEACH)
+			DoForest1Intro();
+		else if (gRealLevel == LEVEL_NUM_QUEENBEE || gRealLevel == LEVEL_NUM_ANTKING)
+			DropLevelLetters();
+		MoveObjects();
+		MoveIntroCamera();
+		MoveParticleGroups();
+		QD3D_MoveShards();
+		QD3D_DrawScene(gGameViewInfoPtr, IntroDrawStuff);
+		DoSDLMaintenance();
+		if (!GetSkipScreenInput() && gIntroElapsed < durations[gRealLevel])
+			return false;
+		phase = 2;
+	}
+
+	if (!GammaFadeOut(false))
+		return false;
 	GameScreenToBlack();
 	
 	DeleteAllObjects();
@@ -204,6 +232,8 @@ void ShowLevelIntroScreen(void)
 	DisposeSoundBank(SOUNDBANK_MAIN);
 	QD3D_DisposeWindowSetup(&gGameViewInfoPtr);		
 	Pomme_FlushPtrTracking(true);
+	phase = 0;
+	return true;
 }
 
 
@@ -372,77 +402,26 @@ TQ3Vector3D				fillDirection2 = { -.7, -.2, -.9 };			// fill
 
 static void DropLevelLetters(void)
 {
-int		i,n,d1,d2;
-static Byte level[] = {0,1,2,1,0};
-ObjNode	*obj;
-float	x;
-
-	if (WaitAndDraw(1))
+	static const Byte letters[] = {0, 1, 2, 1, 0};
+	const int level = gRealLevel + 1;
+	const int count = level >= 10 ? 7 : 6;
+	if (gIntroStep >= count || gIntroElapsed < 1 + .5f * gIntroStep)
 		return;
 
-			/*******************/
-			/* DROP IN "LEVEL" */
-			/*******************/
-			
-	x = -300;
-	for (i = 0; i < 5; i++)	
-	{	
-			/* CREATE LETTER */
-			
-		gNewObjectDefinition.group 		= MODEL_GROUP_LEVELINTRO;	
-		gNewObjectDefinition.type 		= LINTRO_MObjType_L + level[i];	
-		gNewObjectDefinition.coord.x	= x;
-		gNewObjectDefinition.coord.y	= 800;
-		gNewObjectDefinition.coord.z	= 0;
-		gNewObjectDefinition.slot 		= 100;
-		gNewObjectDefinition.flags 		= 0;
-		gNewObjectDefinition.moveCall 	= MoveDroppingLetter;
-		gNewObjectDefinition.rot 		= 0;
-		gNewObjectDefinition.scale 		= .9;
-		obj = MakeNewDisplayGroupObject(&gNewObjectDefinition);
-		obj->Delta.y = -400;
-
-		if (WaitAndDraw(.5))
-			return;
-		
-		x += 100.0f;
-	}
-
-		/*******************/
-		/* DROP IN NUMBER  */
-		/*******************/
-
-	x += 100;
-			
-		/* DETERMINE DIGITS */
-			
-	n = gRealLevel + 1;
-	d1 = n/10;
-	d2 = n%10;
-			
-		/* 1ST DIGIT */
-		
-	if (d1 != 0)
-	{
-		gNewObjectDefinition.group 		= MODEL_GROUP_LEVELINTRO;
-		gNewObjectDefinition.type 		= LINTRO_MObjType_0 + d1;	
-		gNewObjectDefinition.coord.x	= x;
-		obj = MakeNewDisplayGroupObject(&gNewObjectDefinition);
-		obj->Delta.y = -400;
-		if (WaitAndDraw(.5))
-			return;
-		x += 100;
-	}
-	
-		/* 2ND DIGIT */
-
-	gNewObjectDefinition.group 		= MODEL_GROUP_LEVELINTRO;
-	gNewObjectDefinition.type 		= LINTRO_MObjType_0 + d2;	
-	gNewObjectDefinition.coord.x	= x;
-	obj = MakeNewDisplayGroupObject(&gNewObjectDefinition);
+	int i = gIntroStep++;
+	gNewObjectDefinition.group = MODEL_GROUP_LEVELINTRO;
+	if (i < 5)
+		gNewObjectDefinition.type = LINTRO_MObjType_L + letters[i];
+	else
+		gNewObjectDefinition.type = LINTRO_MObjType_0 + (level >= 10 && i == 5 ? level / 10 : level % 10);
+	gNewObjectDefinition.coord = (TQ3Point3D) {i < 5 ? -300 + 100 * i : 300 + 100 * (i - 5), 800, 0};
+	gNewObjectDefinition.slot = 100;
+	gNewObjectDefinition.flags = 0;
+	gNewObjectDefinition.moveCall = MoveDroppingLetter;
+	gNewObjectDefinition.rot = 0;
+	gNewObjectDefinition.scale = .9f;
+	ObjNode* obj = MakeNewDisplayGroupObject(&gNewObjectDefinition);
 	obj->Delta.y = -400;
-	if (WaitAndDraw(5))
-		return;
 }
 
 /***************** MOVE DROPPING LETTER *******************/
@@ -522,8 +501,6 @@ static Byte	letters[] = {LINTRO_MObjType_L, LINTRO_MObjType_E, LINTRO_MObjType_V
 			x += 150;	
 	}
 		
-	if (WaitAndDraw(12))
-		return;
 }
 
 
@@ -617,8 +594,6 @@ static Byte	letters[] = {LINTRO_MObjType_E, LINTRO_MObjType_E, LINTRO_MObjType_V
 	
 	fly->Mode = 0;
 		
-	if (WaitAndDraw(10))
-		return;		
 }
 
 
@@ -733,6 +708,8 @@ float	x;
 static Byte	letters[] = {LINTRO_MObjType_L, LINTRO_MObjType_E, LINTRO_MObjType_V, LINTRO_MObjType_E,
 						LINTRO_MObjType_L, LINTRO_MObjType_3};
 
+	if (gIntroStep == 0)
+	{
 			/* SETUP CAMERA */
 			
 	gIntroCamMode = INTRO_CAM_MODE_PULLBACK;
@@ -770,18 +747,12 @@ static Byte	letters[] = {LINTRO_MObjType_L, LINTRO_MObjType_E, LINTRO_MObjType_V
 			x += 160;	
 	}
 	
-		/*********************/
-		/* FISH EATS LETTERS */
-		/*********************/
-
-	for (i = 0; i < 6; i++)
-	{
-			/* ANIMATE */
-			
-		if (WaitAndDraw(1.0))
-			return;
-
-			/* CREATE THE FISH */
+		gIntroStep = 1;
+		return;
+	}
+	if (gIntroStep > 6 || gIntroElapsed < gIntroStep)
+		return;
+	i = gIntroStep++ - 1;
 			
 		gNewObjectDefinition.type 		= SKELETON_TYPE_PONDFISH;
 		gNewObjectDefinition.animNum 	= PONDFISH_ANIM_JUMPATTACK;							
@@ -799,10 +770,7 @@ static Byte	letters[] = {LINTRO_MObjType_L, LINTRO_MObjType_E, LINTRO_MObjType_V
 		fish->Delta.z = 800;			
 		fish->Skeleton->AnimSpeed = .8;
 		fish->SpecialL[0] = i;
-			
-	}
 
-	WaitAndDraw(2.5);
 }
 
 
@@ -874,6 +842,8 @@ float	x;
 static Byte	letters[] = {LINTRO_MObjType_L, LINTRO_MObjType_E, LINTRO_MObjType_V, LINTRO_MObjType_E,
 						LINTRO_MObjType_L, LINTRO_MObjType_4};
 
+	if (gIntroStep == 0)
+	{
 			/* SETUP CAMERA */
 			
 	gIntroCamMode = INTRO_CAM_MODE_PULLBACK;
@@ -911,14 +881,12 @@ static Byte	letters[] = {LINTRO_MObjType_L, LINTRO_MObjType_E, LINTRO_MObjType_V
 			x += 160;	
 	}
 	
-		/***********************/
-		/* FOOT STOMPS LETTERS */
-		/***********************/
-
-	if (WaitAndDraw(1))
+		gIntroStep = 1;
 		return;
-
-		/* CREATE THE FOOT */
+	}
+	if (gIntroStep != 1 || gIntroElapsed < 1)
+		return;
+	gIntroStep = 2;
 		
 	gNewObjectDefinition.type 		= SKELETON_TYPE_FOOT;
 	gNewObjectDefinition.animNum 	= 0;
@@ -932,7 +900,6 @@ static Byte	letters[] = {LINTRO_MObjType_L, LINTRO_MObjType_E, LINTRO_MObjType_V
 	gNewObjectDefinition.scale 		= 11.0;
 	MakeNewSkeletonObject(&gNewObjectDefinition);			
 			
-	WaitAndDraw(4);
 }
 
 
@@ -1027,7 +994,6 @@ TQ3Point3D from,to;
 	MakeNewSkeletonObject(&gNewObjectDefinition);			
 
 
-	WaitAndDraw(10);
 }
 
 
@@ -1208,7 +1174,6 @@ float	x;
 	ant->Delta.x = 330;
 	ant->BreathParticleGroup = -1;
 			
-	WaitAndDraw(10);
 }
 
 
@@ -1350,7 +1315,6 @@ static const TQ3Point2D beeCoords[] =
 		bee->Skeleton->CurrentAnimTime = RandomFloat()*bee->Skeleton->MaxAnimTime;
 	}
 			
-	WaitAndDraw(15);
 }
 
 
@@ -1423,7 +1387,6 @@ static Byte	letters[] = {LINTRO_MObjType_L, LINTRO_MObjType_E, LINTRO_MObjType_V
 	}
 	
 
-	WaitAndDraw(8);
 }
 
 
@@ -1454,29 +1417,7 @@ float fps = gFramesPerSecondFrac;
 #pragma mark -
 
 
-/******************** WAIT AND DRAW *********************/
 
-static Boolean WaitAndDraw(float duration)
-{
-	do
-	{
-		UpdateInput();
-		MoveObjects();
-		MoveIntroCamera();
-		MoveParticleGroups();
-		QD3D_MoveShards();
-		QD3D_DrawScene(gGameViewInfoPtr,IntroDrawStuff);
-		QD3D_CalcFramesPerSecond();				
-		DoSDLMaintenance();
-		duration -= gFramesPerSecondFrac;
-		
-		if (GetSkipScreenInput())
-			return(true);		
-		
-	}while(duration > 0.0f);
-
-	return(false);
-}
 
 /***************** INTRO DRAW STUFF ******************/
 

@@ -1,6 +1,10 @@
 # Bugdom changelog
 
 - **1.3.5 (NOT RELEASED YET)**
+    - Added a browser version with local saves, fullscreen, and mouse controls.
+    - Fixed black terrain in the browser version.
+    - Added a Macintosh-style loader with source and license links.
+    - Added web builds to GitHub Actions.
     - Ported to SDL 3
     - New setting: preferred display
     - **NOTE:** The Mac version now requires macOS 10.13.

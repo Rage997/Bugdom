@@ -2,4 +2,5 @@
 // mainmenu.h
 //
 
-Boolean DoMainMenu(void);
+// -1 while active, 0 to start a game, 1 to return to the title.
+int DoMainMenu(void);

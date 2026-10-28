@@ -234,13 +234,13 @@ void DisposeInfobarTexture(void)
 
 	if (gInfobarTopMesh)
 	{
-		Q3TriMeshData_Dispose(gInfobarTopMesh);
+		Render_DisposeMesh(gInfobarTopMesh);
 		gInfobarTopMesh = nil;
 	}
 
 	if (gInfobarBottomMesh)
 	{
-		Q3TriMeshData_Dispose(gInfobarBottomMesh);
+		Render_DisposeMesh(gInfobarBottomMesh);
 		gInfobarBottomMesh = nil;
 	}
 
@@ -1275,6 +1275,7 @@ void SubmitInfobarOverlay(void)
 	{
 		Render_UpdateTexture(
 				gInfobarTextureName,
+				GL_RGB,
 				gInfobarTextureDirtyRect.left,
 				gInfobarTextureDirtyRect.top,
 				gInfobarTextureDirtyRect.right - gInfobarTextureDirtyRect.left,

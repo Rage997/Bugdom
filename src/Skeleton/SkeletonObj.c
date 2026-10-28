@@ -294,7 +294,7 @@ static void DisposeSkeletonDefinitionMemory(SkeletonDefType *skeleton)
 
 	if (skeleton->associated3DMF)
 	{
-		Q3MetaFile_Dispose(skeleton->associated3DMF);
+		Render_DisposeMetaFile(skeleton->associated3DMF);
 		skeleton->associated3DMF = nil;
 	}
 

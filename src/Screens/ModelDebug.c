@@ -218,7 +218,7 @@ static void Regen(void)
 
 
 
-void DoModelDebug(void)
+bool DoModelDebug(void)
 {
 	TQ3Point3D			cameraFrom = { 0, 0, 70.0 };
 	QD3DSetupInputType		viewDef;
@@ -229,6 +229,10 @@ void DoModelDebug(void)
 
 
 
+	static bool active;
+	if (!active)
+	{
+		active = true;
 	gDisableAnimSounds = true;
 	gAutoFadeStartDist = 1.0f;
 
@@ -284,16 +288,15 @@ void DoModelDebug(void)
 	Regen();
 
 
-	QD3D_CalcFramesPerSecond();
 
 
-	Boolean changeWindowTitle = true;
-
-	do
+		QD3D_ResetFrameTimer();
+		return false;
+	}
+	Boolean changeWindowTitle = false;
 	{
 		changeWindowTitle = false;
 		
-		QD3D_CalcFramesPerSecond();
 
 		UpdateInput();
 
@@ -402,13 +405,19 @@ void DoModelDebug(void)
 			SDL_SetWindowTitle(gSDLWindow, titlebuf);
 		}
 		
-	} while (!GetKeyState(kKey_UI_Cancel));
+	}
+	if (!GetKeyState(kKey_UI_Cancel))
+		return false;
 
 	
 
 	DeleteAllObjects();
 	Free3DMFGroup(MODEL_GROUP_LEVELSPECIFIC);
+	FreeAllSkeletonFiles(-1);
 	QD3D_DisposeWindowSetup(&gGameViewInfoPtr);
 	GameScreenToBlack();
 	Pomme_FlushPtrTracking(true);
+	gDisableAnimSounds = false;
+	active = false;
+	return true;
 }

@@ -11,6 +11,9 @@
 /***************/
 
 #include "game.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 
 /****************************/
@@ -41,8 +44,10 @@ static uint32_t seed0 = 0x2a80ce30, seed1 = 0, seed2 = 0;
 
 void DoAlert(const char* format, ...)
 {
+#ifndef __EMSCRIPTEN__
 	if (gSDLWindow)
 		SDL_SetWindowFullscreen(gSDLWindow, 0);
+#endif
 
 	char message[1024];
 	va_list args;
@@ -51,7 +56,11 @@ void DoAlert(const char* format, ...)
 	va_end(args);
 
 	SDL_Log("BUGDOM ALERT: %s\n", message);
+#ifdef __EMSCRIPTEN__
+	EM_ASM({ Module['reportWarning'](UTF8ToString($0)); }, message);
+#else
 	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Bugdom", message, gSDLWindow);
+#endif
 }
 
 
@@ -59,8 +68,10 @@ void DoAlert(const char* format, ...)
 
 void DoFatalAlert(const char* format, ...)
 {
+#ifndef __EMSCRIPTEN__
 	if (gSDLWindow)
 		SDL_SetWindowFullscreen(gSDLWindow, 0);
+#endif
 
 	char message[1024];
 	va_list args;
@@ -69,7 +80,11 @@ void DoFatalAlert(const char* format, ...)
 	va_end(args);
 
 	SDL_Log("BUGDOM FATAL ALERT: %s\n", message);
+#ifdef __EMSCRIPTEN__
+	EM_ASM({ Module['reportError'](UTF8ToString($0)); }, message);
+#else
 	SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Bugdom", message, gSDLWindow);
+#endif
 	ExitToShell();
 }
 
@@ -78,35 +93,30 @@ void DoFatalAlert(const char* format, ...)
 
 void CleanQuit(void)
 {
-static Boolean beenHere = false;
+	// Unwind the current screen; Boot advances the quit fade on subsequent frames.
+	ExitToShell();
+}
 
-	if (!beenHere)
-	{
-		GammaFadeOut(true);
+bool GameShutdownFrame(void)
+{
+	if (gGameViewInfoPtr && !GammaFadeOut(true))
+		return false;
 
-		beenHere = true;
-
-		DeleteAllObjects();
-		DeleteAll3DMFGroups();
-		FreeAllSkeletonFiles(-1);
-		QD3D_DisposeShards();
-
-		if (gGameViewInfoPtr != nil)                // see if nuke an existing draw context
-			QD3D_DisposeWindowSetup(&gGameViewInfoPtr);
-
-		GameScreenToBlack();
-
-		FreeInfobarArt();
-	}
-
+	CaptureMouse(false);
+	DeleteAllObjects();
+	DeleteAll3DMFGroups();
+	FreeAllSkeletonFiles(-1);
+	QD3D_DisposeShards();
+	if (gGameViewInfoPtr)
+		QD3D_DisposeWindowSetup(&gGameViewInfoPtr);
+	FreeInfobarArt();
 	StopAllEffectChannels();
 	KillSong();
-
 	SDL_ShowCursor();
 	Pomme_FlushPtrTracking(false);
 	Render_EndScene();
 	Render_DeleteContext();
-	ExitToShell();
+	return true;
 }
 
 

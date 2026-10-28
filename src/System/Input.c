@@ -11,6 +11,22 @@
 /***************/
 
 #include "game.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+static bool webPauseRequested;
+static bool webMouseCaptureWanted;
+
+EMSCRIPTEN_KEEPALIVE void WebRequestPause(void)
+{
+	if (gIsInGame && !gIsGamePaused)
+		webPauseRequested = true;
+}
+
+EMSCRIPTEN_KEEPALIVE int WebCaptureMouse(void)
+{
+	return webMouseCaptureWanted && SDL_SetWindowRelativeMouseMode(gSDLWindow, true);
+}
+#endif
 
 
 /**********************/
@@ -35,6 +51,9 @@ typedef struct KeyBinding
 static struct
 {
 	TQ3Point2D pos;
+#ifdef __EMSCRIPTEN__
+	TQ3Point2D lastPhysicalMouse;
+#endif
 	bool didMove;
 	bool steeredByThumbstick;
 } gAnalogCursor;
@@ -92,7 +111,12 @@ TQ3Vector2D			gCameraControlDelta;
 
 SDL_Gamepad			*gSDLGamepad = NULL;
 
-#if __APPLE__
+#if defined(__EMSCRIPTEN__)
+	#define DEFAULT_JUMP_SCANCODE1 SDL_SCANCODE_X
+	#define DEFAULT_JUMP_SCANCODE2 0
+	#define DEFAULT_KICK_SCANCODE1 SDL_SCANCODE_C
+	#define DEFAULT_KICK_SCANCODE2 0
+#elif __APPLE__
 	#define DEFAULT_JUMP_SCANCODE1 SDL_SCANCODE_LGUI
 	#define DEFAULT_JUMP_SCANCODE2 SDL_SCANCODE_RGUI
 	#define DEFAULT_KICK_SCANCODE1 SDL_SCANCODE_LALT
@@ -246,6 +270,13 @@ void UpdateInput(void)
 		UpdateKeyMap();
 	else													// otherwise, just clear it out
 		ResetInputState();
+#ifdef __EMSCRIPTEN__
+	if (webPauseRequested)
+	{
+		webPauseRequested = false;
+		gKeyStates[kKey_Pause] = KEYSTATE_PRESSED;
+	}
+#endif
 
 	// Assume player using key control if any arrow keys are pressed,
 	// otherwise assume mouse movement 
@@ -294,6 +325,15 @@ void ResetInputState(void)
 
 	MouseSmoothing_ResetState();
 	EatMouseEvents();
+}
+
+void ClearInputStates(void)
+{
+	SDL_ResetKeyboard();
+	ResetInputState();
+	gCameraControlDelta = (TQ3Vector2D) {0, 0};
+	gTypedAsciiKey = '\0';
+	gPlayerUsingKeyControl = false;
 }
 
 void InvalidateKeyState(int need)
@@ -349,6 +389,7 @@ void UpdateKeyMap(void)
 		/* WHILE WE'RE HERE LET'S DO SOME SPECIAL KEY CHECKS */
 		/*****************************************************/
 
+#ifndef __EMSCRIPTEN__
 	if (GetNewKeyState_SDL(SDL_SCANCODE_RETURN)
 		&& (GetKeyState_SDL(SDL_SCANCODE_LALT) || GetKeyState_SDL(SDL_SCANCODE_RALT)))
 	{
@@ -357,6 +398,7 @@ void UpdateKeyMap(void)
 
 		ResetInputState();
 	}
+#endif
 
 	if ((!gIsInGame || gIsGamePaused) && IsCmdQPressed())
 	{
@@ -438,12 +480,20 @@ void EatMouseEvents(void)
 
 void CaptureMouse(Boolean doCapture)
 {
+#ifdef __EMSCRIPTEN__
+	// Pointer lock must be requested by a browser gesture, not the frame callback.
+	webMouseCaptureWanted = doCapture;
+	EM_ASM({ Module['setMouseCapture'](!!$0); }, doCapture);
+	if (!doCapture)
+		SDL_SetWindowRelativeMouseMode(gSDLWindow, false);
+#else
 	SDL_PumpEvents();	// Prevent SDL from thinking mouse buttons are stuck as we switch into relative mode
 	SDL_SetWindowMouseGrab(gSDLWindow, doCapture);
 	SDL_SetWindowRelativeMouseMode(gSDLWindow, doCapture);
 
 	if (doCapture)
 		SDL_HideCursor();
+#endif
 
 	ClearMouseState();
 	EatMouseEvents();
@@ -599,11 +649,15 @@ SDL_Gamepad* TryOpenGamepad(bool showMessage)
 						 "The game does not support your controller yet (\"%s\").\n\n"
 						 "You can play with the keyboard and mouse instead. Sorry!",
 						 SDL_GetJoystickNameForID(joysticks[0]));
+#ifdef __EMSCRIPTEN__
+			EM_ASM({ Module['reportWarning'](UTF8ToString($0)); }, messageBuf);
+#else
 			SDL_ShowSimpleMessageBox(
 				SDL_MESSAGEBOX_WARNING,
 				"Controller not supported",
 				messageBuf,
 				gSDLWindow);
+		#endif
 		}
 	}
 
@@ -655,6 +709,9 @@ void InitAnalogCursor(void)
 	SDL_memset(&gAnalogCursor, 0, sizeof(gAnalogCursor));
 
 	gAnalogCursor.pos = GetMousePosition();
+#ifdef __EMSCRIPTEN__
+	gAnalogCursor.lastPhysicalMouse = gAnalogCursor.pos;
+#endif
 }
 
 void ShutdownAnalogCursor(void)
@@ -671,7 +728,14 @@ bool MoveAnalogCursor(int* outMouseX, int* outMouseY)
 	TQ3Vector2D thumbstick = GetThumbStickVector(false);
 
 	TQ3Point2D newMouse = GetMousePosition();
+#ifdef __EMSCRIPTEN__
+	// Browsers cannot warp the hardware cursor to follow a gamepad.
+	bool mouseMoved = gAnalogCursor.lastPhysicalMouse.x != newMouse.x
+		|| gAnalogCursor.lastPhysicalMouse.y != newMouse.y;
+	gAnalogCursor.lastPhysicalMouse = newMouse;
+#else
 	bool mouseMoved = gAnalogCursor.pos.x != newMouse.x || gAnalogCursor.pos.y != newMouse.y;
+#endif
 
 	float speed = 300;
 	if (gWindowWidth > gWindowHeight)
@@ -685,7 +749,7 @@ bool MoveAnalogCursor(int* outMouseX, int* outMouseY)
 		gAnalogCursor.didMove = true;
 		gAnalogCursor.pos = newMouse;
 	}
-	else if (thumbstick.x != 0 && thumbstick.y != 0)
+	else if (thumbstick.x != 0 || thumbstick.y != 0)
 	{
 		gAnalogCursor.steeredByThumbstick = true;
 		gAnalogCursor.didMove = true;
@@ -699,7 +763,9 @@ bool MoveAnalogCursor(int* outMouseX, int* outMouseY)
 		if (gAnalogCursor.pos.x > gWindowWidth-1) gAnalogCursor.pos.x = gWindowWidth-1;
 		if (gAnalogCursor.pos.y > gWindowHeight-1) gAnalogCursor.pos.y = gWindowHeight-1;
 
+#ifndef __EMSCRIPTEN__
 		SDL_WarpMouseInWindow(gSDLWindow, (int) gAnalogCursor.pos.x, (int) gAnalogCursor.pos.y);
+#endif
 	}
 
 	if (outMouseX)

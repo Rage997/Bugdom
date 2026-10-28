@@ -9,7 +9,6 @@
 
 #include "game.h"
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_opengl.h>
 #include <QD3D.h>
 
 
@@ -58,7 +57,9 @@ static MeshQueueEntry*		gMeshQueuePtrs[MESHQUEUE_MAX_SIZE];
 static int					gMeshQueueSize = 0;
 static bool					gFrameStarted = false;
 
+#ifndef __EMSCRIPTEN__
 static float				gBackupVertexColors[4*65536];
+#endif
 
 static int DrawOrderComparator(void const* a_void, void const* b_void);
 
@@ -131,6 +132,19 @@ float gGammaFadeFactor = 1.0f;
 
 static TQ3TriMeshData* gFullscreenQuad = nil;
 
+#ifdef __EMSCRIPTEN__
+static TQ3ColorRGBA gWebColor = {1,1,1,1};
+#endif
+
+static void SetColor(float r, float g, float b, float a)
+{
+#ifdef __EMSCRIPTEN__
+	gWebColor = (TQ3ColorRGBA){r,g,b,a};
+#else
+	glColor4f(r,g,b,a);
+#endif
+}
+
 #pragma mark -
 
 /****************************/
@@ -140,6 +154,9 @@ static TQ3TriMeshData* gFullscreenQuad = nil;
 static void __SetInitialState(GLenum stateEnum, bool* stateFlagPtr, bool initialValue)
 {
 	*stateFlagPtr = initialValue;
+#ifdef __EMSCRIPTEN__
+	if (stateEnum != GL_CULL_FACE && stateEnum != GL_DEPTH_TEST && stateEnum != GL_BLEND) return;
+#endif
 	if (initialValue)
 		glEnable(stateEnum);
 	else
@@ -149,16 +166,26 @@ static void __SetInitialState(GLenum stateEnum, bool* stateFlagPtr, bool initial
 
 static void __SetInitialClientState(GLenum stateEnum, bool* stateFlagPtr, bool initialValue)
 {
+	(void) stateEnum;
 	*stateFlagPtr = initialValue;
+#ifndef __EMSCRIPTEN__
 	if (initialValue)
 		glEnableClientState(stateEnum);
 	else
 		glDisableClientState(stateEnum);
 	CHECK_GL_ERROR();
+#endif
 }
 
 static inline void __SetState(GLenum stateEnum, bool* stateFlagPtr, bool enable)
 {
+#ifdef __EMSCRIPTEN__
+	if (stateEnum != GL_CULL_FACE && stateEnum != GL_DEPTH_TEST && stateEnum != GL_BLEND)
+	{
+		*stateFlagPtr = enable;
+		return;
+	}
+#endif
 	if (enable != *stateFlagPtr)
 	{
 		if (enable)
@@ -171,12 +198,15 @@ static inline void __SetState(GLenum stateEnum, bool* stateFlagPtr, bool enable)
 
 static inline void __SetClientState(GLenum stateEnum, bool* stateFlagPtr, bool enable)
 {
+	(void) stateEnum;
 	if (enable != *stateFlagPtr)
 	{
+#ifndef __EMSCRIPTEN__
 		if (enable)
 			glEnableClientState(stateEnum);
 		else
 			glDisableClientState(stateEnum);
+#endif
 		*stateFlagPtr = enable;
 	}
 }
@@ -232,6 +262,9 @@ void Render_CreateContext(void)
 	gGLContext = SDL_GL_CreateContext(gSDLWindow);
 
 	GAME_ASSERT(gGLContext);
+#ifdef __EMSCRIPTEN__
+	RenderWeb_Init();
+#endif
 
 	// On Windows, proc addresses are only valid for the current context,
 	// so we must get proc addresses everytime we recreate the context.
@@ -242,6 +275,7 @@ void Render_DeleteContext(void)
 {
 	if (gGLContext)
 	{
+		RenderWeb_Shutdown();
 		SDL_GL_DestroyContext(gGLContext);
 		gGLContext = NULL;
 	}
@@ -277,7 +311,7 @@ void Render_InitState(const TQ3ColorRGBA* clearColor)
 	glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 	gState.wantColorMask = true;			// must match glColorMask call above!
 
-	glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+	SetColor(1.0f, 1.0f, 1.0f, 1.0f);
 	
 	gState.boundTexture = 0;
 	gState.sceneHasFog = false;
@@ -286,9 +320,11 @@ void Render_InitState(const TQ3ColorRGBA* clearColor)
 	glClearColor(clearColor->r, clearColor->g, clearColor->b, 1.0f);
 	
 	// Set misc GL defaults that apply throughout the entire game
+#ifndef __EMSCRIPTEN__
 	glAlphaFunc(GL_GREATER, 0.4999f);
-	glFrontFace(GL_CCW);
 	glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE);
+#endif
+	glFrontFace(GL_CCW);
 
 	// Set up mesh queue
 	gMeshQueueSize = 0;
@@ -310,7 +346,7 @@ void Render_EndScene(void)
 {
 	if (gFullscreenQuad)
 	{
-		Q3TriMeshData_Dispose(gFullscreenQuad);
+		Render_DisposeMesh(gFullscreenQuad);
 		gFullscreenQuad = NULL;
 	}
 }
@@ -324,11 +360,15 @@ void Render_EnableFog(
 {
 	(void) camHither;
 
+#ifdef __EMSCRIPTEN__
+	RenderWeb_SetFog(fogHither * camYon, fogYon * camYon, fogColor);
+#else
 	glHint(GL_FOG_HINT,		GL_NICEST);
 	glFogi(GL_FOG_MODE,		GL_LINEAR);
 	glFogf(GL_FOG_START,	fogHither * camYon);
 	glFogf(GL_FOG_END,		fogYon * camYon);
 	glFogfv(GL_FOG_COLOR,	&fogColor.r);
+#endif
 	gState.sceneHasFog = true;
 }
 
@@ -376,6 +416,9 @@ GLuint Render_LoadTexture(
 	if (flags & kRendererTextureFlags_ClampV)
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
+#ifdef __EMSCRIPTEN__
+	RenderWeb_UploadTexture(true, internalFormat, 0, 0, width, height, bufferFormat, bufferType, pixels, 0);
+#else
 	glTexImage2D(
 			GL_TEXTURE_2D,
 			0,						// mipmap level
@@ -386,6 +429,7 @@ GLuint Render_LoadTexture(
 			bufferFormat,			// what my format is
 			bufferType,				// size of each r,g,b
 			pixels);				// pointer to the actual texture pixels
+#endif
 	CHECK_GL_ERROR();
 
 	return textureName;
@@ -393,6 +437,7 @@ GLuint Render_LoadTexture(
 
 void Render_UpdateTexture(
 		GLuint textureName,
+		GLenum internalFormat,
 		int x,
 		int y,
 		int width,
@@ -402,6 +447,11 @@ void Render_UpdateTexture(
 		const GLvoid* pixels,
 		int rowBytesInInput)
 {
+#ifdef __EMSCRIPTEN__
+	Render_BindTexture(textureName);
+	RenderWeb_UploadTexture(false, internalFormat, x, y, width, height, bufferFormat, bufferType, pixels, rowBytesInInput);
+#else
+	(void) internalFormat;	// Native GL retains the texture's internal format.
 	GLint pUnpackRowLength = 0;
 
 	Render_BindTexture(textureName);
@@ -430,6 +480,7 @@ void Render_UpdateTexture(
 	{
 		glPixelStorei(GL_UNPACK_ROW_LENGTH, pUnpackRowLength);
 	}
+#endif
 }
 
 void Render_Load3DMFTextures(TQ3MetaFile* metaFile, GLuint* outTextureNames, bool forceClampUVs)
@@ -512,6 +563,7 @@ void Render_Load3DMFTextures(TQ3MetaFile* metaFile, GLuint* outTextureNames, boo
 
 void Render_StartFrame(void)
 {
+	RenderWeb_BeginFrame();
 	bool didMakeCurrent = SDL_GL_MakeCurrent(gSDLWindow, gGLContext);
 	GAME_ASSERT_MESSAGE(didMakeCurrent, SDL_GetError());
 
@@ -634,7 +686,9 @@ void Render_FlushQueue(void)
 	// Clear transform
 	if (NULL != gState.currentTransform)
 	{
+#ifndef __EMSCRIPTEN__
 		glPopMatrix();
+#endif
 		gState.currentTransform = NULL;
 	}
 }
@@ -826,6 +880,22 @@ static void SendGeometry(const MeshQueueEntry* entry)
 	if (statusBits & STATUS_BIT_KEEPBACKFACES_2PASS)
 		glCullFace(GL_FRONT);		// Pass 1: draw backfaces (cull frontfaces)
 
+#ifdef __EMSCRIPTEN__
+	unsigned flags =
+		(gState.hasState_GL_LIGHTING ? kWebDrawLit : 0) |
+		(gState.hasState_GL_TEXTURE_2D ? kWebDrawTextured : 0) |
+		(gState.hasState_GL_ALPHA_TEST ? kWebDrawCutout : 0) |
+		(gState.hasState_GL_FOG ? kWebDrawFog : 0) |
+		(gState.hasClientState_GL_COLOR_ARRAY ? kWebDrawColors : 0) |
+		(gState.hasClientState_GL_NORMAL_ARRAY ? kWebDrawNormals : 0) |
+		(gState.wantColorMask && (statusBits & STATUS_BIT_REFLECTIONMAP) ? kWebDrawReflection : 0);
+	RenderWeb_DrawMesh(mesh, entry->transform, &gWebColor, flags);
+	if (statusBits & STATUS_BIT_KEEPBACKFACES_2PASS)
+	{
+		glCullFace(GL_BACK);
+		RenderWeb_DrawMesh(mesh, entry->transform, &gWebColor, flags);
+	}
+#else
 	// Submit vertex data
 	glVertexPointer(3, GL_FLOAT, 0, mesh->points);
 
@@ -858,6 +928,7 @@ static void SendGeometry(const MeshQueueEntry* entry)
 		glDrawElements(GL_TRIANGLES, mesh->numTriangles * 3, GL_UNSIGNED_INT, mesh->triangles);
 		CHECK_GL_ERROR();
 	}
+#endif
 }
 
 static void BeginDepthPass(const MeshQueueEntry* entry)
@@ -873,7 +944,7 @@ static void BeginDepthPass(const MeshQueueEntry* entry)
 	// Always write to depth buffer in this pass
 	SetFlag(glDepthMask, true);
 
-	glColor4f(1,1,1,1);
+	SetColor(1,1,1,1);
 	DisableClientState(GL_COLOR_ARRAY);
 	DisableClientState(GL_NORMAL_ARRAY);
 	EnableState(GL_DEPTH_TEST);
@@ -891,7 +962,9 @@ static void BeginDepthPass(const MeshQueueEntry* entry)
 		EnableState(GL_TEXTURE_2D);
 		EnableClientState(GL_TEXTURE_COORD_ARRAY);
 		Render_BindTexture(mesh->glTextureName);
+#ifndef __EMSCRIPTEN__
 		glTexCoordPointer(2, GL_FLOAT, 0, mesh->vertexUVs);
+#endif
 		CHECK_GL_ERROR();
 	}
 	else
@@ -929,7 +1002,9 @@ static void BeginShadingPass(const MeshQueueEntry* entry)
 		EnableState(GL_TEXTURE_2D);
 		EnableClientState(GL_TEXTURE_COORD_ARRAY);
 		Render_BindTexture(mesh->glTextureName);
+#ifndef __EMSCRIPTEN__
 		glTexCoordPointer(2, GL_FLOAT, 0, (statusBits & STATUS_BIT_REFLECTIONMAP) ? gEnvMapUVs: mesh->vertexUVs);
+#endif
 		CHECK_GL_ERROR();
 	}
 	else
@@ -943,7 +1018,9 @@ static void BeginShadingPass(const MeshQueueEntry* entry)
 	if (mesh->hasVertexNormals && !(statusBits & STATUS_BIT_NULLSHADER))
 	{
 		EnableClientState(GL_NORMAL_ARRAY);
+#ifndef __EMSCRIPTEN__
 		glNormalPointer(GL_FLOAT, 0, mesh->vertexNormals);
+#endif
 	}
 	else
 	{
@@ -969,14 +1046,18 @@ static void PrepareOpaqueShading(const MeshQueueEntry* entry)
 	{
 		EnableClientState(GL_COLOR_ARRAY);
 
+#ifdef __EMSCRIPTEN__
+		SetColor(1,1,1,1);
+#else
 		glColorPointer(4, GL_FLOAT, 0, mesh->vertexColors);
+#endif
 	}
 	else
 	{
 		DisableClientState(GL_COLOR_ARRAY);
 
 		// Apply diffuse color for the entire mesh
-		glColor4f(
+		SetColor(
 				mesh->diffuseColor.r * entry->mods->diffuseColor.r,
 				mesh->diffuseColor.g * entry->mods->diffuseColor.g,
 				mesh->diffuseColor.b * entry->mods->diffuseColor.b,
@@ -1005,6 +1086,9 @@ static void PrepareAlphaShading(const MeshQueueEntry* entry)
 	{
 		EnableClientState(GL_COLOR_ARRAY);
 
+#ifdef __EMSCRIPTEN__
+		SetColor(1,1,1,entry->mods->autoFadeFactor);
+#else
 		// OpenGL ignores diffuse color (used for transparency) if we also send
 		// per-vertex colors. So, apply transparency to the per-vertex color array.
 		GAME_ASSERT(4 * mesh->numPoints <= (int)(sizeof(gBackupVertexColors) / sizeof(gBackupVertexColors[0])));
@@ -1018,13 +1102,14 @@ static void PrepareAlphaShading(const MeshQueueEntry* entry)
 		}
 
 		glColorPointer(4, GL_FLOAT, 0, gBackupVertexColors);
+#endif
 	}
 	else
 	{
 		DisableClientState(GL_COLOR_ARRAY);
 
 		// Apply diffuse color for the entire mesh
-		glColor4f(
+		SetColor(
 				mesh->diffuseColor.r * entry->mods->diffuseColor.r,
 				mesh->diffuseColor.g * entry->mods->diffuseColor.g,
 				mesh->diffuseColor.b * entry->mods->diffuseColor.b,
@@ -1040,7 +1125,7 @@ void Render_ResetColor(void)
 	DisableState(GL_TEXTURE_2D);
 	DisableClientState(GL_NORMAL_ARRAY);
 	DisableClientState(GL_COLOR_ARRAY);
-	glColor4f(1, 1, 1, 1);
+	SetColor(1, 1, 1, 1);
 }
 
 #pragma mark -
@@ -1086,6 +1171,9 @@ void Render_Enter2D_Full640x480(void)
 		glViewport(0, 0, gWindowWidth, gWindowHeight);
 	}
 
+#ifdef __EMSCRIPTEN__
+	RenderWeb_Enter2D(0, 640, 480, 0);
+#else
 	glMatrixMode(GL_PROJECTION);
 	glPushMatrix();
 	glLoadIdentity();
@@ -1093,10 +1181,14 @@ void Render_Enter2D_Full640x480(void)
 	glMatrixMode(GL_MODELVIEW);
 	glPushMatrix();
 	glLoadIdentity();
+#endif
 }
 
 void Render_Enter2D_NormalizedCoordinates(float aspect)
 {
+#ifdef __EMSCRIPTEN__
+	RenderWeb_Enter2D(-aspect, aspect, -1, 1);
+#else
 	glMatrixMode(GL_PROJECTION);
 	glPushMatrix();
 	glLoadIdentity();
@@ -1104,10 +1196,14 @@ void Render_Enter2D_NormalizedCoordinates(float aspect)
 	glMatrixMode(GL_MODELVIEW);
 	glPushMatrix();
 	glLoadIdentity();
+#endif
 }
 
 void Render_Enter2D_NativeResolution(void)
 {
+#ifdef __EMSCRIPTEN__
+	RenderWeb_Enter2D(0, gWindowWidth, gWindowHeight, 0);
+#else
 	glMatrixMode(GL_PROJECTION);
 	glPushMatrix();
 	glLoadIdentity();
@@ -1115,14 +1211,19 @@ void Render_Enter2D_NativeResolution(void)
 	glMatrixMode(GL_MODELVIEW);
 	glPushMatrix();
 	glLoadIdentity();
+#endif
 }
 
 void Render_Exit2D(void)
 {
+#ifdef __EMSCRIPTEN__
+	RenderWeb_Exit2D();
+#else
 	glMatrixMode(GL_PROJECTION);
 	glPopMatrix();
 	glMatrixMode(GL_MODELVIEW);
 	glPopMatrix();
+#endif
 }
 
 #pragma mark -
@@ -1180,3 +1281,24 @@ TQ3Area Render_GetAdjustedViewportRect(Rect paneClip, int logicalWidth, int logi
 
 	return (TQ3Area) {{left,top},{right,bottom}};
 }
+
+void Render_DisposeMesh(TQ3TriMeshData* mesh)
+{
+	RenderWeb_ReleaseMesh(mesh);
+	Q3TriMeshData_Dispose(mesh);
+}
+
+void Render_DisposeMetaFile(TQ3MetaFile* file)
+{
+#ifdef __EMSCRIPTEN__
+	for (int i = 0; i < file->numMeshes; i++)
+		RenderWeb_ReleaseMesh(file->meshes[i]);
+#endif
+	Q3MetaFile_Dispose(file);
+}
+
+#ifndef __EMSCRIPTEN__
+void Render_BeginLines(GLenum mode) { glBegin(mode); }
+void Render_LineVertex(float x, float y, float z) { glVertex3f(x,y,z); }
+void Render_EndLines(void) { glEnd(); }
+#endif

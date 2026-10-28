@@ -4,4 +4,4 @@
 
 
 
-void DoBonusScreen(void);
+bool DoBonusScreen(void);

@@ -189,7 +189,7 @@ void DisposeLensFlares(void)
 	{
 		if (gFlareMeshes[i])
 		{
-			Q3TriMeshData_Dispose(gFlareMeshes[i]);
+			Render_DisposeMesh(gFlareMeshes[i]);
 			gFlareMeshes[i] = nil;
 		}
 	}
@@ -351,7 +351,9 @@ void CalcCameraMatrixInfo(QD3DSetupOutputType *setupInfo)
 {
 			/* INIT PROJECTION MATRIX */
 
+#ifndef __EMSCRIPTEN__
 	glMatrixMode(GL_PROJECTION);
+#endif
 
 	FillProjectionMatrix(
 			&gCameraViewToFrustumMatrix,
@@ -360,11 +362,10 @@ void CalcCameraMatrixInfo(QD3DSetupOutputType *setupInfo)
 			setupInfo->hither,
 			setupInfo->yon);
 
+#ifndef __EMSCRIPTEN__
 	glLoadMatrixf((const GLfloat*) &gCameraViewToFrustumMatrix.value[0][0]);
-
-			/* INIT MODELVIEW MATRIX */
-
 	glMatrixMode(GL_MODELVIEW);
+#endif
 
 	FillLookAtMatrix(
 			&gCameraWorldToViewMatrix,
@@ -372,6 +373,7 @@ void CalcCameraMatrixInfo(QD3DSetupOutputType *setupInfo)
 			&setupInfo->currentCameraLookAt,
 			&setupInfo->currentCameraUpVector);
 
+#ifndef __EMSCRIPTEN__
 	glLoadMatrixf((const GLfloat*) &gCameraWorldToViewMatrix.value[0][0]);
 
 			/* UPDATE LIGHT POSITIONS */
@@ -386,6 +388,7 @@ void CalcCameraMatrixInfo(QD3DSetupOutputType *setupInfo)
 		lightVec[3] = 0;									// when w==0, this is a directional light, if 1 then point light
 		glLightfv(GL_LIGHT0+i, GL_POSITION, lightVec);
 	}
+#endif
 
 
 			/* GET CAMERA VIEW MATRIX INFO */
@@ -697,6 +700,7 @@ const bool doMoon = gMoonFlareTextureName != 0;
 		mesh->points[1] = (TQ3Point3D) { x + extent, y - extent, 0 };
 		mesh->points[2] = (TQ3Point3D) { x + extent, y + extent, 0 };
 		mesh->points[3] = (TQ3Point3D) { x - extent, y + extent, 0 };
+		RenderWeb_InvalidateMesh(mesh, kWebMeshGeometry);
 
 		if (doMoon && (i == 0))							// see if do moon
 			mesh->glTextureName = gMoonFlareTextureName;

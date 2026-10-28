@@ -216,6 +216,7 @@ void UpdateSkinnedGeometry(ObjNode *theNode)
 	for (int i = 0; i < theNode->NumMeshes; i++)
 	{
 		theNode->MeshList[i]->bBox = gBBox;				// apply to local copy of trimesh
+		RenderWeb_InvalidateMesh(theNode->MeshList[i], kWebMeshGeometry);
 	}
 }
 
