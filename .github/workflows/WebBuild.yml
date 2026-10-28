@@ -1,4 +1,4 @@
-name: Web Build
+name: Web Build and GitHub Pages
 
 on:
   workflow_dispatch:
@@ -25,15 +25,36 @@ jobs:
         run: emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build-web --parallel 2
-      - name: Upload static site
-        uses: actions/upload-artifact@v4
+      - name: Stage static site
+        run: |
+          mkdir -p _site
+          cp build-web/Bugdom.html _site/index.html
+          cp build-web/Bugdom.{js,wasm,data,png} _site/
+          cp LICENSE.md _site/
+          cp -R build-web/web-assets _site/
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
         with:
-          name: Bugdom-web
-          if-no-files-found: error
-          path: |
-            build-web/Bugdom.html
-            build-web/Bugdom.js
-            build-web/Bugdom.wasm
-            build-web/Bugdom.data
-            build-web/Bugdom.png
-            build-web/web-assets/
+          path: _site
+
+  deploy:
+    name: Deploy GitHub Pages
+    if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+    needs: web
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

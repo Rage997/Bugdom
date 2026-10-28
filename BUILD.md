@@ -47,8 +47,14 @@ You may rename `Bugdom.html` to `index.html`. Serve `.wasm` as `application/wasm
 and `.data` as `application/octet-stream`. No backend or cross-origin isolation is needed.
 
 The asset bundle is about **65 MiB** uncompressed. Check the host's file-size limit
-and enable compression. The **Web Build** workflow uploads a `Bugdom-web` artifact;
-it does not publish a site.
+and enable compression.
+
+### GitHub Pages
+
+In the repository's **Settings → Pages**, set **Source** to **GitHub Actions**.
+The **Web Build and GitHub Pages** workflow builds the game and deploys pushes to
+`master`; pull requests and other branches build without publishing.
+You can also run the workflow manually on `master`.
 
 Keep the credits and CC BY-NC-SA 4.0 license. Commercial use needs separate permission.
 

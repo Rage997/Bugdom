@@ -9,7 +9,9 @@ Based on [Iliyas Jorio's desktop port](https://github.com/jorio/bugdom), made wi
 
 ## Play in a browser
 
-Requires WebGL2 and saves progress in your browser. See [build and hosting instructions](BUILD.md#how-to-build-for-the-web); no public deployment is configured.
+**[Play Bugdom in your browser](https://niccolozuppichini.com/Bugdom/)**
+
+Requires WebGL2 and saves progress in your browser. See [build and hosting instructions](BUILD.md#how-to-build-for-the-web).
 
 Desktop controls: **Arrows/WASD** to move, **X** to jump, **C** to kick, **Space** to roll, **Tab** for the buddy bug, and **Escape** to pause. Click the canvas for mouse capture. Touch-only play is not supported.
 
